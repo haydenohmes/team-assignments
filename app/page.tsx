@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog" // Added Dialog components
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 
 type AthleteStatus = "Assigned" | "Invited" | "Accepted" | "Rostered" | "Declined" | null
 
@@ -1110,19 +1111,79 @@ export default function AssignAthletesPage() {
                           <div className="flex items-center justify-between">
                             <div className="text-left">
                               <h3 className="text-card-foreground font-semibold mb-2">{team.name}</h3>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                <span>
-                                  Accepted <span className="font-bold">{stats.accepted}</span>
-                                </span>
-                                <span>
-                                  Rostered <span className="font-bold">{stats.rostered}</span>
-                                </span>
-                                <span>
-                                  Assigned <span className="font-bold">{stats.assigned}</span>
-                                </span>
-                                <span>
-                                  Invited <span className="font-bold">{stats.invited}</span>
-                                </span>
+                              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="whitespace-nowrap cursor-default">
+                                      {viewMode === "grid" ? (
+                                        <>A: <span className="font-bold">{stats.accepted}</span></>
+                                      ) : (
+                                        <>
+                                          <span className="hidden lg:inline">Accepted </span>
+                                          <span className="lg:hidden">A: </span>
+                                          <span className="font-bold">{stats.accepted}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
+                                    Accepted
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="whitespace-nowrap cursor-default">
+                                      {viewMode === "grid" ? (
+                                        <>R: <span className="font-bold">{stats.rostered}</span></>
+                                      ) : (
+                                        <>
+                                          <span className="hidden lg:inline">Rostered </span>
+                                          <span className="lg:hidden">R: </span>
+                                          <span className="font-bold">{stats.rostered}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
+                                    Rostered
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="whitespace-nowrap cursor-default">
+                                      {viewMode === "grid" ? (
+                                        <>As: <span className="font-bold">{stats.assigned}</span></>
+                                      ) : (
+                                        <>
+                                          <span className="hidden lg:inline">Assigned </span>
+                                          <span className="lg:hidden">As: </span>
+                                          <span className="font-bold">{stats.assigned}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
+                                    Assigned
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="whitespace-nowrap cursor-default">
+                                      {viewMode === "grid" ? (
+                                        <>I: <span className="font-bold">{stats.invited}</span></>
+                                      ) : (
+                                        <>
+                                          <span className="hidden lg:inline">Invited </span>
+                                          <span className="lg:hidden">I: </span>
+                                          <span className="font-bold">{stats.invited}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
+                                    Invited
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             </div>
                             {expandedTeams.has(team.id) ? (
