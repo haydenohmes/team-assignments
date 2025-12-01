@@ -7,12 +7,13 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, MoreVertical } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog" // Added Dialog components
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 type AthleteStatus = "Assigned" | "Invited" | "Accepted" | "Rostered" | "Declined" | null
 
@@ -943,13 +944,6 @@ export default function AssignAthletesPage() {
             <h1 className="text-foreground font-semibold text-lg text-center">Assign Athletes</h1>
 
             <div className="flex items-center justify-end gap-3">
-              <Button 
-                className="bg-muted-foreground hover:bg-foreground text-primary-foreground"
-                disabled={assignedAthleteIds.size === 0}
-                onClick={() => setFinalizeModalOpen(true)}
-              >
-                Finalize Teams
-              </Button>
               <Button onClick={() => setInviteModalOpen(true)} className="bg-muted-foreground hover:bg-foreground text-primary-foreground gap-2">
                 <Send className="h-4 w-4" />
                 Send Invitations
@@ -962,6 +956,44 @@ export default function AssignAthletesPage() {
               >
                 Save
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    size="icon"
+                    className="bg-muted-foreground hover:bg-foreground text-primary-foreground"
+                  >
+                    <MoreVertical className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {assignedAthleteIds.size === 0 ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="block w-full">
+                          <DropdownMenuItem
+                            disabled={true}
+                            className="text-foreground"
+                          >
+                            Finalize Teams
+                          </DropdownMenuItem>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
+                        Assign at least one athlete to a team to finalize
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setFinalizeModalOpen(true)
+                      }}
+                      className="text-foreground"
+                    >
+                      Finalize Teams
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
