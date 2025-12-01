@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, MoreVertical, AlertTriangle } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, AlertTriangle } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog" // Added Dialog components
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -948,30 +948,32 @@ export default function AssignAthletesPage() {
                 <Send className="h-4 w-4" />
                 Send Invitations
               </Button>
-              <Button 
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                onClick={() => {
-                  setHasSaved(true)
-                }}
-              >
-                Save
-              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
-                    className="bg-muted-foreground hover:bg-foreground text-primary-foreground h-[40px] min-h-[40px] px-3"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
                   >
-                    <MoreVertical className="h-5 w-5" />
+                    Save
+                    <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
                     onSelect={() => {
+                      setHasSaved(true)
+                    }}
+                    className="text-foreground"
+                  >
+                    Save
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setHasSaved(true)
                       setFinalizeModalOpen(true)
                     }}
                     className="text-foreground"
                   >
-                    Finalize Teams
+                    Save & Finalize
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
