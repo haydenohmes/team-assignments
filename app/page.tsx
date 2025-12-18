@@ -7,13 +7,13 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, AlertTriangle } from 'lucide-react'
+import { Checkbox } from "@/components/ui/checkbox"
+import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog" // Added Dialog components
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 type AthleteStatus = "Assigned" | "Invited" | "Accepted" | "Rostered" | "Declined" | null
 
@@ -437,6 +437,8 @@ export default function AssignAthletesPage() {
   const [selectedGraduationYear, setSelectedGraduationYear] = useState<string>("")
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [completeTeamsDrawerOpen, setCompleteTeamsDrawerOpen] = useState(false)
+  const [expandedTeamsInDrawer, setExpandedTeamsInDrawer] = useState<Set<string>>(new Set())
   const [inviteModalStep, setInviteModalStep] = useState<"teams" | "email">("teams")
   const [selectedTeamsForInvite, setSelectedTeamsForInvite] = useState<Set<string>>(
     new Set(teams.slice(0, 5).map((t) => t.id)),
@@ -445,9 +447,10 @@ export default function AssignAthletesPage() {
   const [emailBody, setEmailBody] = useState("")
 
   const [selectedProgram, setSelectedProgram] = useState<string>("")
-  const [selectedRegistration, setSelectedRegistration] = useState<Set<string>>(new Set())
+  const [selectedRegistration, setSelectedRegistration] = useState<string>("")
   const [hasSaved, setHasSaved] = useState(false)
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
 
   const seasonItems = [
     "U13-Black",
@@ -524,14 +527,13 @@ export default function AssignAthletesPage() {
   const [teamSearchQuery, setTeamSearchQuery] = useState("")
 
   const searchedAthletes =
-    !selectedProgram || selectedRegistration.size === 0
+    !selectedProgram || !selectedRegistration
       ? []
       : availableAthletes
           .filter((athlete) => {
             // Filter by registration - athlete must have at least one matching registration
-            const hasMatchingRegistration = Array.from(selectedRegistration).some((reg) =>
-              athlete.registrations.includes(reg)
-            )
+            const hasMatchingRegistration = selectedRegistration &&
+              athlete.registrations.includes(selectedRegistration)
             return hasMatchingRegistration && athlete.name.toLowerCase().includes(athleteSearchQuery.toLowerCase())
           })
           .sort((a, b) => {
@@ -636,6 +638,9 @@ export default function AssignAthletesPage() {
     // Clear selection after drop
     setMainContentSelectedAthletes(new Set())
     setSidebarSelectedAthletes(new Set())
+
+    // Trigger autosave after drop completes
+    triggerAutosave()
   }
 
   const removeAthleteFromSlot = (teamId: string, slotIndex: number) => {
@@ -754,6 +759,22 @@ export default function AssignAthletesPage() {
     }
   }, [teamSearchQuery, teamAssignments, selectedSeasons, expandedTeams])
 
+  // Autosave function - called explicitly after user actions complete
+  const triggerAutosave = () => {
+    setSaveStatus("saving")
+
+    // Simulate save operation (replace with actual API call)
+    setTimeout(() => {
+      setSaveStatus("saved")
+      setHasSaved(true)
+
+      // Reset to idle after showing "Saved" for 2 seconds
+      setTimeout(() => {
+        setSaveStatus("idle")
+      }, 2000)
+    }, 500) // Short delay to simulate API call
+  }
+
   // COMBINED selection states for drag operations
   const selectedAthletes = new Set([...mainContentSelectedAthletes, ...sidebarSelectedAthletes])
 
@@ -846,6 +867,9 @@ export default function AssignAthletesPage() {
     // Clear selection after drop
     setMainContentSelectedAthletes(new Set())
     setSidebarSelectedAthletes(new Set())
+
+    // Trigger autosave after drop completes
+    triggerAutosave()
   }
 
   const handleCollapsedTeamDragLeave = () => {
@@ -915,6 +939,9 @@ export default function AssignAthletesPage() {
     // Clear selection after drop
     setMainContentSelectedAthletes(new Set())
     setSidebarSelectedAthletes(new Set())
+
+    // Trigger autosave after drop completes
+    triggerAutosave()
   }
 
   const handleMainContentClick = (e: React.MouseEvent) => {
@@ -930,191 +957,198 @@ export default function AssignAthletesPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--u-color-base-background)' }}>
-      {/* Header - Removed border-b to eliminate the line */}
-      <header className="py-2.5" style={{ backgroundColor: 'var(--u-color-base-background)' }}>
-        <div className="max-w-[1600px] mx-auto px-4">
-          <div className="grid grid-cols-3 items-center">
+    <div className="min-h-screen" style={{ backgroundColor: '#f8f8f9' }}>
+      {/* Header */}
+      <header className="py-0" style={{ backgroundColor: '#fefefe' }}>
+        <div className="max-w-[1600px] mx-auto px-3">
+          <div className="relative flex items-center justify-between h-[56px]">
             <div className="flex items-center">
-              <Button variant="ghost" size="icon" className="text-foreground">
+              <Button variant="ghost" size="icon" className="text-[#36485c] hover:bg-transparent">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </div>
 
-            <h1 className="text-foreground font-semibold text-lg text-center">Assign Athletes</h1>
+            <h1 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[#071c31] font-bold text-base text-center whitespace-nowrap" style={{ fontFamily: 'Barlow, sans-serif' }}>Assign Athletes</h1>
 
-            <div className="flex items-center justify-end gap-3">
-              <Button onClick={() => setInviteModalOpen(true)} className="bg-muted-foreground hover:bg-foreground text-primary-foreground gap-2">
-                <Send className="h-4 w-4" />
+            <div className="flex items-center justify-end gap-2">
+              {/* Autosave Indicator */}
+              {saveStatus !== "idle" && (
+                <div className="flex items-center gap-2 text-sm text-[#36485c] pr-4">
+                  {saveStatus === "saving" && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  )}
+                  {saveStatus === "saved" && (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-[#36485c]" />
+                      <span>Saved</span>
+                    </>
+                  )}
+                </div>
+              )}
+              <Button onClick={() => setInviteModalOpen(true)} className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" style={{ borderRadius: '2px' }}>
                 Send Invitations
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
-                  >
-                    Save
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setHasSaved(true)
-                    }}
-                    className="text-foreground"
-                  >
-                    Save
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setHasSaved(true)
-                      setFinalizeModalOpen(true)
-                    }}
-                    className="text-foreground"
-                  >
-                    Save & Finalize
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button 
+                onClick={() => setCompleteTeamsDrawerOpen(true)}
+                className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] h-9 px-4" 
+                style={{ borderRadius: '2px' }}
+              >
+                Review Teams
+              </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-[1600px] mx-auto px-4" style={{ backgroundColor: 'var(--u-color-base-background)' }}>
-        <div className="flex h-[calc(100vh-80px)] overflow-hidden relative gap-4">
+      <div className="max-w-[1600px] mx-auto px-3 pt-3" style={{ backgroundColor: '#f8f8f9' }}>
+        <div className="flex h-[calc(100vh-56px-12px)] overflow-hidden relative" style={{ gap: '8px' }}>
           {/* Left Sidebar - Filters */}
           <aside
-            className={`bg-card rounded overflow-hidden transition-all duration-300 ease-in-out ${
-              sidebarVisible ? "w-[300px]" : "w-0"
+            className={`bg-[#f8f8f9] transition-all duration-300 ease-in-out flex flex-col ${
+              sidebarVisible ? "w-[320px]" : "w-0"
             }`}
           >
             <div
-              className={`p-6 w-[300px] transition-opacity duration-300 overflow-y-auto h-full px-4 py-4 ${sidebarVisible ? "opacity-100" : "opacity-0"}`}
+              className={`w-[320px] transition-opacity duration-300 overflow-y-auto flex-1 pl-0 pr-0 pt-0 pb-3 ${sidebarVisible ? "opacity-100" : "opacity-0"}`}
             >
-              <h2 className="text-card-foreground font-semibold mb-2">Teams</h2>
+              <div className="bg-[#fefefe] rounded p-4">
+                <h2 className="text-[#071c31] font-bold text-base mb-0" style={{ fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}>Teams</h2>
 
-              {/* Season Filter */}
-              <div>
-                <button
-                  className="flex items-center gap-2 text-card-foreground text-sm py-1 w-full px-2"
-                  onClick={() => setSeason2025Expanded(!season2025Expanded)}
-                >
-                  {season2025Expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                  <span>2025-2026</span>
-                </button>
-                {season2025Expanded && (
-                      <div className="ml-6 space-y-2 mt-1">
-                        <div>
+                {/* Teams Filter */}
+                <div className="mt-4 space-y-1">
+                  <button
+                    className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
+                    onClick={() => setMaleExpanded(!maleExpanded)}
+                    style={{ fontFamily: 'Barlow, sans-serif' }}
+                  >
+                    <div className="flex-none rotate-180">
+                      {maleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </div>
+                    <span>Male</span>
+                  </button>
+                  {maleExpanded && (
+                    <div className="ml-4 border-l border-[#c4c6c8] pl-1 space-y-0.5">
+                      {teams
+                        .filter((team) => team.gender === "Male")
+                        .map((team) => (
                           <button
-                            className="flex items-center gap-2 text-card-foreground text-sm py-1 w-full px-2"
-                            onClick={() => setMaleExpanded(!maleExpanded)}
+                            key={team.name}
+                            onClick={() => toggleSeason(team.name)}
+                            className={`text-sm h-8 px-2 rounded w-full text-left flex items-center justify-between transition-colors ${
+                              selectedSeasons.has(team.name) 
+                                ? "bg-[#e0e1e1] text-[#071c31] font-bold" 
+                                : "text-[#36485c] font-medium hover:bg-[#e0e1e1]"
+                            }`}
+                            style={{ fontFamily: 'Barlow, sans-serif' }}
                           >
-                            {maleExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                            <span>Male</span>
-                          </button>
-                          {maleExpanded && (
-                            <div className="ml-6 space-y-1 mt-1">
-                              {teams
-                                .filter((team) => team.gender === "Male")
-                                .map((team) => (
-                                  <button
-                                    key={team.name}
-                                    onClick={() => toggleSeason(team.name)}
-                                    className={`text-card-foreground text-sm py-1 px-2 rounded w-full text-left flex items-center justify-between ${
-                                      selectedSeasons.has(team.name) ? "bg-muted" : "hover:bg-muted/50"
-                                    }`}
-                                  >
-                                    <span>{team.name}</span>
-                                    {selectedSeasons.has(team.name) && <Check className="h-4 w-4" />}
-                                  </button>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <button
-                            className="flex items-center gap-2 text-card-foreground text-sm py-1 w-full px-2"
-                            onClick={() => setFemaleExpanded(!femaleExpanded)}
-                          >
-                            {femaleExpanded ? (
-                              <ChevronDown className="h-3 w-3" />
-                            ) : (
-                              <ChevronRight className="h-3 w-3" />
+                            <span>{team.name}</span>
+                            {selectedSeasons.has(team.name) && (
+                              <div className="flex items-center justify-center pr-1">
+                                <Check className="h-4 w-4 text-[#071c31]" />
+                              </div>
                             )}
-                            <span>Female</span>
                           </button>
-                          {femaleExpanded && (
-                            <div className="ml-6 space-y-1 mt-1">
-                              {teams
-                                .filter((team) => team.gender === "Female")
-                                .map((team) => (
-                                  <button
-                                    key={team.name}
-                                    onClick={() => toggleSeason(team.name)}
-                                    className={`text-card-foreground text-sm py-1 px-2 rounded w-full text-left flex items-center justify-between ${
-                                      selectedSeasons.has(team.name) ? "bg-muted" : "hover:bg-muted/50"
-                                    }`}
-                                  >
-                                    <span>{team.name}</span>
-                                    {selectedSeasons.has(team.name) && <Check className="h-4 w-4" />}
-                                  </button>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                        ))}
+                    </div>
+                  )}
+
+                  <button
+                    className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
+                    onClick={() => setFemaleExpanded(!femaleExpanded)}
+                    style={{ fontFamily: 'Barlow, sans-serif' }}
+                  >
+                    <div className="flex-none rotate-180">
+                      {femaleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </div>
+                    <span>Female</span>
+                  </button>
+                  {femaleExpanded && (
+                    <div className="ml-4 border-l border-[#c4c6c8] pl-1 space-y-0.5">
+                      {teams
+                        .filter((team) => team.gender === "Female")
+                        .map((team) => (
+                          <button
+                            key={team.name}
+                            onClick={() => toggleSeason(team.name)}
+                            className={`text-sm h-8 px-2 rounded w-full text-left flex items-center justify-between transition-colors ${
+                              selectedSeasons.has(team.name) 
+                                ? "bg-[#e0e1e1] text-[#071c31] font-bold" 
+                                : "text-[#36485c] font-medium hover:bg-[#e0e1e1]"
+                            }`}
+                            style={{ fontFamily: 'Barlow, sans-serif' }}
+                          >
+                            <span>{team.name}</span>
+                            {selectedSeasons.has(team.name) && (
+                              <div className="flex items-center justify-center pr-1">
+                                <Check className="h-4 w-4 text-[#071c31]" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </aside>
 
-          {/* Center Content Area - Removed bg-white, border, and rounded-lg to make it blend with page background */}
-          <main className="flex-1 overflow-hidden flex flex-col" onClick={handleMainContentClick}>
+          {/* Center Content Area */}
+          <main className="flex-1 overflow-hidden flex flex-col bg-[#fefefe] rounded p-3" onClick={handleMainContentClick}>
             {/* Toolbar container - sticky at top */}
-            <div className="bg-card rounded p-4 mb-4 sticky top-0 z-10">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:bg-transparent rounded"
-                  onClick={() => setSidebarVisible(!sidebarVisible)}
-                >
-                  <Filter className="h-5 w-5" />
-                </Button>
-                <Input
-                  type="text"
-                  placeholder="Search for..."
-                  value={teamSearchQuery}
-                  onChange={(e) => setTeamSearchQuery(e.target.value)}
-                  className="flex-1 border-border text-foreground placeholder:text-muted-foreground rounded"
-                />
-                <div className="flex items-center bg-card border border-border rounded p-1 py-0.5">
+            <div className="bg-[#fefefe] rounded p-0 mb-4 sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-[#fefefe] rounded" style={{ borderRadius: '4px', height: '40px' }}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setViewMode("grid")}
-                    className={`h-8 w-8 rounded ${
-                      viewMode === "grid"
-                        ? "bg-muted text-foreground hover:bg-muted"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    className={`h-10 w-10 text-[#36485c] hover:bg-[#e0e1e1] rounded ${
+                      sidebarVisible ? "bg-[#e0e1e1]" : ""
                     }`}
+                    onClick={() => setSidebarVisible(!sidebarVisible)}
+                    style={{ borderRadius: '2px' }}
                   >
-                    <LayoutGrid className="h-4 w-4" />
+                    <Filter className="h-6 w-6" />
                   </Button>
+                </div>
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Search for athletes or teams"
+                    value={teamSearchQuery}
+                    onChange={(e) => setTeamSearchQuery(e.target.value)}
+                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded"
+                    style={{ borderRadius: '2px', fontSize: '16px', fontFamily: 'Helvetica, sans-serif' }}
+                  />
+                </div>
+                <div className="flex items-center bg-[#fefefe] border border-[#c4c6c8] rounded" style={{ borderRadius: '4px', height: '40px' }}>
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setViewMode("list")}
-                    className={`h-8 w-8 rounded ${
+                    className={`h-10 w-10 rounded ${
                       viewMode === "list"
-                        ? "bg-muted text-foreground hover:bg-muted"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        ? "bg-[#e0e1e1] text-[#36485c] hover:bg-[#e0e1e1]"
+                        : "text-[#36485c] hover:bg-[#e0e1e1]"
                     }`}
+                    style={{ borderRadius: '2px' }}
                   >
-                    <List className="h-4 w-4" />
+                    <List className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setViewMode("grid")}
+                    className={`h-10 w-10 rounded ${
+                      viewMode === "grid"
+                        ? "bg-[#e0e1e1] text-[#36485c] hover:bg-[#e0e1e1]"
+                        : "text-[#36485c] hover:bg-[#e0e1e1]"
+                    }`}
+                    style={{ borderRadius: '2px' }}
+                  >
+                    <LayoutGrid className="h-5 w-5" />
                   </Button>
                 </div>
               </div>
@@ -1130,7 +1164,18 @@ export default function AssignAthletesPage() {
                     const isContainerDragTarget = expandedTeams.has(team.id) && dragOverTeamContainer === team.id
 
                     return (
-                      <div key={team.id} className="rounded bg-card p-4 min-w-0">
+                      <div 
+                        key={team.id} 
+                        className={`rounded p-3 min-w-0 transition-colors ${
+                          isCollapsedDragTarget || isContainerDragTarget
+                            ? "bg-[#e7f3fd] border border-[#085bb4] border-solid" 
+                            : "bg-[#fefefe] border border-[#c4c6c8]"
+                        }`}
+                        style={{ borderRadius: '8px' }}
+                        onDragOver={expandedTeams.has(team.id) ? (e) => handleTeamContainerDragOver(e, team.id) : undefined}
+                        onDragLeave={expandedTeams.has(team.id) ? handleTeamContainerDragLeave : undefined}
+                        onDrop={expandedTeams.has(team.id) ? (e) => handleTeamContainerDrop(e, team.id) : undefined}
+                      >
                         <button
                           onClick={() => toggleTeam(team.id)}
                           onDragOver={
@@ -1138,110 +1183,58 @@ export default function AssignAthletesPage() {
                           }
                           onDrop={!expandedTeams.has(team.id) ? (e) => handleCollapsedTeamDrop(e, team.id) : undefined}
                           onDragLeave={!expandedTeams.has(team.id) ? handleCollapsedTeamDragLeave : undefined}
-                          className={`w-full transition-colors rounded ${
-                            isCollapsedDragTarget ? "bg-muted/50" : ""
-                          }`}
+                          className="w-full"
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="text-left">
-                              <h3 className="text-card-foreground font-semibold mb-2">{team.name}</h3>
-                              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="whitespace-nowrap cursor-default">
-                                      {viewMode === "grid" ? (
-                                        <>As: <span className="font-bold">{stats.assigned}</span></>
-                                      ) : (
-                                        <>
-                                          <span className="hidden lg:inline">Assigned </span>
-                                          <span className="lg:hidden">As: </span>
-                                          <span className="font-bold">{stats.assigned}</span>
-                                        </>
-                                      )}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
-                                    Assigned
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="whitespace-nowrap cursor-default">
-                                      {viewMode === "grid" ? (
-                                        <>I: <span className="font-bold">{stats.invited}</span></>
-                                      ) : (
-                                        <>
-                                          <span className="hidden lg:inline">Invited </span>
-                                          <span className="lg:hidden">I: </span>
-                                          <span className="font-bold">{stats.invited}</span>
-                                        </>
-                                      )}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
-                                    Invited
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="whitespace-nowrap cursor-default">
-                                      {viewMode === "grid" ? (
-                                        <>A: <span className="font-bold">{stats.accepted}</span></>
-                                      ) : (
-                                        <>
-                                          <span className="hidden lg:inline">Accepted </span>
-                                          <span className="lg:hidden">A: </span>
-                                          <span className="font-bold">{stats.accepted}</span>
-                                        </>
-                                      )}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
-                                    Accepted
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="whitespace-nowrap cursor-default">
-                                      {viewMode === "grid" ? (
-                                        <>D: <span className="font-bold">{stats.declined}</span></>
-                                      ) : (
-                                        <>
-                                          <span className="hidden lg:inline">Declined </span>
-                                          <span className="lg:hidden">D: </span>
-                                          <span className="font-bold">{stats.declined}</span>
-                                        </>
-                                      )}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white border-0 [&>svg]:bg-black [&>svg]:fill-black">
-                                    Declined
-                                  </TooltipContent>
-                                </Tooltip>
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="text-left flex-1">
+                              <h3 className="text-[#071c31] font-bold text-sm mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', lineHeight: '1.4' }}>{team.name}</h3>
+                              <div className="flex items-center gap-3 text-xs text-[#36485c] flex-wrap" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                                <span className="whitespace-nowrap">
+                                  Assigned: <span className="font-bold" style={{ fontFamily: 'Barlow, sans-serif' }}>{stats.assigned}</span>
+                                </span>
+                                <span className="whitespace-nowrap">
+                                  Invited: <span className="font-bold" style={{ fontFamily: 'Barlow, sans-serif' }}>{stats.invited}</span>
+                                </span>
+                                <span className="whitespace-nowrap">
+                                  Accepted: <span className="font-bold" style={{ fontFamily: 'Barlow, sans-serif' }}>{stats.accepted}</span>
+                                </span>
+                                <span className="whitespace-nowrap">
+                                  Declined: <span className="font-bold" style={{ fontFamily: 'Barlow, sans-serif' }}>{stats.declined}</span>
+                                </span>
                               </div>
                             </div>
-                            {expandedTeams.has(team.id) ? (
-                              <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                            )}
+                            <div className="flex items-center justify-center flex-shrink-0">
+                              <div className="flex-none rotate-180">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-[#36485c] hover:bg-transparent"
+                                  style={{ borderRadius: '2px' }}
+                                >
+                                  {expandedTeams.has(team.id) ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </button>
 
-                        {expandedTeams.has(team.id) && (
-                          <div
-                            className={`border border-dashed border-border rounded mt-4 p-4 transition-colors py-0 px-0 ${
-                              isContainerDragTarget ? "bg-muted/30" : ""
-                            }`}
-                            onDragOver={(e) => handleTeamContainerDragOver(e, team.id)}
-                            onDragLeave={handleTeamContainerDragLeave}
-                            onDrop={(e) => handleTeamContainerDrop(e, team.id)}
-                          >
-                            {(() => {
-                              const teamSlots = teamAssignments[team.id] || {}
-                              const filledSlotIndices = Object.keys(teamSlots)
-                                .map(Number)
-                                .sort((a, b) => a - b)
+                        {expandedTeams.has(team.id) && (() => {
+                          const teamSlots = teamAssignments[team.id] || {}
+                          const filledSlotIndices = Object.keys(teamSlots)
+                            .map(Number)
+                            .sort((a, b) => a - b)
+                          const isEmpty = filledSlotIndices.length === 0
+                          
+                          return (
+                            <div
+                              className="rounded"
+                              style={{ borderRadius: '8px', padding: isEmpty ? '4px 0 0 0' : '8px 0 0 0', marginTop: '16px' }}
+                            >
+                              {(() => {
 
                               // Render filled slots
                               const filledSlots = filledSlotIndices.map((slotIndex) => {
@@ -1260,43 +1253,30 @@ export default function AssignAthletesPage() {
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, assignedAthleteId)}
                                     onDragEnd={handleDragEnd}
-                                    onDragOver={(e) => handleDragOver(e, team.id, slotIndex)}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={(e) => handleDrop(e, team.id, slotIndex)}
-                                    className={`px-4 py-3 border-b border-dotted border-border transition-colors cursor-move ${
-                                      isDropTarget ? "bg-muted/50" : ""
-                                    }`}
+                                    className="flex items-center gap-0 p-0 bg-[#f8f8f9] rounded hover:bg-[#f0f0f0] transition-colors cursor-move border border-[#c4c6c8]"
+                                    style={{ height: '48px', borderRadius: '4px', marginBottom: '8px' }}
                                   >
                                     {assignedAthlete && (
-                                      <div className="flex items-center gap-3">
-                                        <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                        <div className="relative flex items-center justify-center flex-shrink-0">
-                                          <input
-                                            type="checkbox"
-                                            checked={mainContentSelectedAthletes.has(assignedAthleteId)}
-                                            onChange={() => toggleMainContentAthleteSelection(assignedAthleteId)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="appearance-none w-5 h-5 border-2 border-border rounded-full cursor-pointer checked:bg-[var(--u-color-emphasis-background-contrast)] checked:border-[var(--u-color-emphasis-background-contrast)] transition-colors flex items-center justify-center"
-                                          />
-                                          {mainContentSelectedAthletes.has(assignedAthleteId) && (
-                                            <Check className="absolute h-3 w-3 text-white pointer-events-none" />
-                                          )}
+                                      <>
+                                        <div className="bg-[#eff0f0] flex items-center justify-center flex-shrink-0 h-full" style={{ width: '32px', padding: '0 4px', borderTopLeftRadius: '4px', borderBottomLeftRadius: '4px' }}>
+                                          <GripVertical className="h-6 w-6 text-[#36485c]" />
                                         </div>
-                                        <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center text-primary-foreground text-xs font-semibold flex-shrink-0">
-                                          {assignedAthlete.initials}
-                                        </div>
-                                        <div className="flex-1 flex items-center justify-between gap-2">
-                                          <div className="flex flex-col">
+                                        <div className="flex items-center gap-2 flex-1 min-w-0 px-3 py-3">
+                                          <div className="w-8 h-8 rounded-full bg-[#38434f] border border-[#fafafa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', letterSpacing: '-0.3px' }}>
+                                            {assignedAthlete.initials}
+                                          </div>
+                                          <div className="flex-1 flex flex-col gap-0 justify-center min-w-0">
                                             <button
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 setSelectedAthleteForDrawer(assignedAthlete)
                                               }}
-                                              className="text-card-foreground text-sm font-medium hover:text-[var(--u-color-emphasis-background-contrast)] transition-colors text-left"
+                                              className="text-[#36485c] text-sm font-bold text-left truncate"
+                                              style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
                                             >
                                               {assignedAthlete.name}
                                             </button>
-                                            <span className="text-muted-foreground text-xs">{assignedAthlete.birthdate}</span>
+                                            <span className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4', letterSpacing: '0px' }}>{assignedAthlete.birthdate}</span>
                                           </div>
                                         </div>
                                         {statusStyle && athleteStatus && (
@@ -1304,7 +1284,8 @@ export default function AssignAthletesPage() {
                                             <PopoverTrigger asChild>
                                               <button
                                                 onClick={(e) => e.stopPropagation()}
-                                                className={`${statusStyle.bg} ${statusStyle.text} text-sm px-3 py-1 rounded font-medium cursor-pointer hover:opacity-80 transition-opacity`}
+                                                className={`bg-[#e0e1e1] text-[#36485c] text-xs px-2 py-1 rounded font-bold cursor-pointer hover:opacity-80 transition-opacity`}
+                                                style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
                                               >
                                                 {athleteStatus}
                                               </button>
@@ -1322,11 +1303,14 @@ export default function AssignAthletesPage() {
                                                             ...prev,
                                                             [assignedAthleteId]: status
                                                           }))
+                                                          // Trigger autosave after status change
+                                                          triggerAutosave()
                                                         }
                                                       }}
                                                       className={`w-full text-left px-3 py-2 rounded text-sm font-medium transition-colors ${
-                                                        style ? `${style.bg} ${style.text}` : 'bg-muted text-foreground'
-                                                      } hover:opacity-80 ${athleteStatus === status ? 'ring-2 ring-[var(--u-color-emphasis-background-contrast)]' : ''}`}
+                                                        style ? `${style.bg} ${style.text}` : 'bg-[#e0e1e1] text-[#36485c]'
+                                                      } hover:opacity-80 ${athleteStatus === status ? 'ring-2 ring-[#0273e3]' : ''}`}
+                                                      style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif' }}
                                                     >
                                                       {status}
                                                     </button>
@@ -1339,12 +1323,13 @@ export default function AssignAthletesPage() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                          className="h-8 w-8 text-[#36485c] hover:text-[#36485c] hover:bg-transparent"
                                           onClick={() => removeAthleteFromSlot(team.id, slotIndex)}
+                                          style={{ borderRadius: '4px' }}
                                         >
                                           <X className="h-4 w-4" />
                                         </Button>
-                                      </div>
+                                      </>
                                     )}
                                   </div>
                                 )
@@ -1355,47 +1340,60 @@ export default function AssignAthletesPage() {
                               const isEmptySlotDropTarget =
                                 dragOverSlot?.teamId === team.id && dragOverSlot?.slotIndex === nextSlotIndex
 
-                              const emptySlot = (
+                              const emptySlot = filledSlotIndices.length === 0 ? (
                                 <div
                                   key="empty-slot"
-                                  onDragOver={(e) => handleDragOver(e, team.id, nextSlotIndex)}
-                                  onDragLeave={handleDragLeave}
-                                  onDrop={(e) => handleDrop(e, team.id, nextSlotIndex)}
-                                  className={`px-4 py-3 border-b border-dotted border-border last:border-b-0 transition-colors ${
-                                    isEmptySlotDropTarget ? "bg-muted/50" : ""
-                                  }`}
+                                  className="flex items-center justify-center"
+                                  style={{ 
+                                    minHeight: '60px',
+                                    marginBottom: '0px',
+                                    marginTop: '0px'
+                                  }}
                                 >
-                                  <span className="text-muted-foreground text-sm">Open</span>
+                                  <div
+                                    className="flex items-center justify-center w-full"
+                                    style={{
+                                      border: '1px dashed #c4c6c8',
+                                      borderRadius: '8px',
+                                      padding: '12px',
+                                      backgroundColor: '#ffffff'
+                                    }}
+                                  >
+                                    <span className="text-[#36485c]" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>
+                                      Add Athletes
+                                    </span>
+                                  </div>
                                 </div>
-                              )
+                              ) : null
 
-                              return [emptySlot, ...filledSlots]
+                              return emptySlot ? [emptySlot, ...filledSlots] : filledSlots
                             })()}
-                          </div>
-                        )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     )
                   })}
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-[calc(100%-80px)]">
-                  <p className="text-muted-foreground text-center">Filter your teams to start team assignments</p>
+                  <p className="text-[#36485c] text-center" style={{ fontFamily: 'Barlow, sans-serif' }}>Filter your teams to start team assignments</p>
                 </div>
               )}
             </div>
           </main>
 
           {/* Right Sidebar */}
-          <aside className="w-[400px] bg-card rounded overflow-hidden flex flex-col" onClick={handleRightSidebarClick}>
-            <div className="flex-shrink-0 px-4 py-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-card-foreground font-semibold">Athletes</h2>
+          <aside className="w-[320px] bg-[#fefefe] rounded overflow-hidden flex flex-col" onClick={handleRightSidebarClick} style={{ borderRadius: '4px' }}>
+            <div className="flex-shrink-0 px-4 py-0">
+              <div className="flex items-center justify-between mb-4 pt-4">
+                <h2 className="text-[#071c31] font-bold text-base" style={{ fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}>Athletes</h2>
               </div>
 
-              <div className="space-y-3 mb-4">
+              <div className="space-y-2 mb-2">
                 <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Programs" />
+                  <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#36485c] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                    <SelectValue placeholder="2025 Spring Open Gym" />
                   </SelectTrigger>
                   <SelectContent>
                     {programOptions.map((program) => (
@@ -1406,87 +1404,43 @@ export default function AssignAthletesPage() {
                   </SelectContent>
                 </Select>
 
-                <div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        disabled={!selectedProgram}
-                        className="w-full pl-3 pr-8 py-2 border border-border rounded text-foreground text-sm bg-card focus:outline-none focus:ring-2 focus:ring-[var(--u-color-emphasis-background-contrast)] focus:border-transparent disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-left flex items-center justify-between"
-                      >
-                        <span className={selectedRegistration.size === 0 ? "text-muted-foreground" : ""}>
-                          {selectedRegistration.size === 0
-                            ? "Registration"
-                            : selectedRegistration.size === 1
-                              ? Array.from(selectedRegistration)[0]
-                              : `${selectedRegistration.size} selected`}
-                        </span>
-                        <ChevronDown className="h-4 w-4 opacity-50" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[400px] p-2" align="start">
-                      <div className="space-y-2">
-                        {registrationOptions.map((registration) => {
-                          const isSelected = selectedRegistration.has(registration)
-                          return (
-                            <button
-                              key={registration}
-                              onClick={() => {
-                                const newSelected = new Set(selectedRegistration)
-                                if (isSelected) {
-                                  newSelected.delete(registration)
-                                } else {
-                                  newSelected.add(registration)
-                                }
-                                setSelectedRegistration(newSelected)
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted rounded text-sm text-left"
-                            >
-                              <div className="relative flex items-center justify-center flex-shrink-0">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  className="appearance-none w-4 h-4 border-2 border-border rounded cursor-pointer checked:bg-[var(--u-color-emphasis-background-contrast)] checked:border-[var(--u-color-emphasis-background-contrast)] transition-colors"
-                                />
-                                {isSelected && <Check className="absolute h-3 w-3 text-white pointer-events-none" />}
-                              </div>
-                              <span className="text-foreground">{registration}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                <Select value={selectedRegistration} onValueChange={setSelectedRegistration} disabled={!selectedProgram}>
+                  <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#36485c] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] disabled:cursor-not-allowed" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                    <SelectValue placeholder="U15 Registration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {registrationOptions.map((registration) => (
+                      <SelectItem key={registration} value={registration}>
+                        {registration}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="flex items-center mb-4 gap-0">
-                <Input
-                  type="text"
-                  placeholder="Search for..."
-                  value={athleteSearchQuery}
-                  onChange={(e) => setAthleteSearchQuery(e.target.value)}
-                  className="flex-1 border-border text-foreground placeholder:text-muted-foreground rounded"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground hover:bg-transparent rounded"
-                  onClick={() => setAthleteSortOrder(athleteSortOrder === "asc" ? "desc" : "asc")}
-                  title={athleteSortOrder === "asc" ? "Sort A-Z" : "Sort Z-A"}
-                >
-                  <ArrowUpDown className="h-5 w-5" />
-                </Button>
+              <div className="flex items-center mb-4 gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Search for athletes"
+                    value={athleteSearchQuery}
+                    onChange={(e) => setAthleteSearchQuery(e.target.value)}
+                    disabled={!selectedProgram}
+                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] disabled:cursor-not-allowed"
+                    style={{ borderRadius: '2px', fontSize: '16px', fontFamily: 'Helvetica, sans-serif' }}
+                  />
+                </div>
                 <Sheet open={athleteFilterOpen} onOpenChange={setAthleteFilterOpen}>
                   <SheetTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-muted-foreground hover:text-foreground hover:bg-transparent relative rounded"
+                      className="h-10 w-10 text-[#36485c] hover:bg-[#e0e1e1] relative rounded"
+                      style={{ borderRadius: '2px' }}
                     >
                       <Filter className="h-5 w-5" />
                       {athleteFilterCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-[var(--u-color-emphasis-background-contrast)] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        <span className="absolute -top-1 -right-1 bg-[#0273e3] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                           {athleteFilterCount}
                         </span>
                       )}
@@ -1495,7 +1449,7 @@ export default function AssignAthletesPage() {
 
                   <SheetContent className="w-[380px] sm:max-w-[380px] bg-card flex flex-col p-0">
                     <SheetHeader className="flex-shrink-0 px-6 pt-4 pb-3">
-                      <SheetTitle className="text-card-foreground text-left">Filter Athletes by</SheetTitle>
+                      <SheetTitle className="text-[#071c31] text-left">Filter Athletes by</SheetTitle>
                     </SheetHeader>
                     <div className="border-b border-border -mx-6 mb-4"></div>
 
@@ -1626,54 +1580,57 @@ export default function AssignAthletesPage() {
 
             <div className="flex-1 overflow-y-auto space-y-2 px-4 pb-4">
               {searchedAthletes.length > 0 ? (
-                searchedAthletes.map((athlete) => (
+                searchedAthletes.map((athlete) => {
+                  const isAssigned = assignedAthleteIds.has(athlete.id)
+                  return (
                   <div
                     key={athlete.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, athlete.id)}
                     onDragEnd={handleDragEnd}
                     onClick={() => toggleSidebarAthleteSelection(athlete.id)}
-                    className={`flex items-center gap-3 p-3 bg-card border border-border rounded hover:bg-muted/50 transition-colors cursor-pointer ${
-                      draggedAthletes.includes(athlete.id) ? "opacity-50" : ""
-                    }`}
+                    className={`flex items-center gap-0 p-0 bg-[#f8f8f9] rounded hover:bg-[#f0f0f0] transition-colors cursor-pointer ${
+                      isAssigned ? "border border-[#c4c6c8]" : ""
+                    } ${draggedAthletes.includes(athlete.id) ? "opacity-50" : ""}`}
+                    style={{ height: '48px', borderRadius: '4px' }}
                   >
-                    <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <div className="relative flex items-center justify-center flex-shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={sidebarSelectedAthletes.has(athlete.id)}
-                        onChange={() => toggleSidebarAthleteSelection(athlete.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="appearance-none w-5 h-5 border-2 border-border rounded-full cursor-pointer checked:bg-[var(--u-color-emphasis-background-contrast)] checked:border-[var(--u-color-emphasis-background-contrast)] transition-colors flex items-center justify-center"
-                      />
-                      {sidebarSelectedAthletes.has(athlete.id) && (
-                        <Check className="absolute h-3 w-3 text-white pointer-events-none" />
-                      )}
+                    <div className="bg-[#eff0f0] flex items-center justify-center flex-shrink-0 h-full" style={{ width: '32px', padding: '0 4px', borderTopLeftRadius: '4px', borderBottomLeftRadius: '4px' }}>
+                      <GripVertical className="h-6 w-6 text-[#36485c]" />
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center text-primary-foreground text-xs font-semibold flex-shrink-0">
-                      {athlete.initials}
-                    </div>
-                    <div className="flex-1 flex items-center justify-between gap-2">
-                      <div className="flex flex-col">
+                    <div className="flex items-center gap-2 flex-1 min-w-0 px-3 py-3">
+                      <div className="w-8 h-8 rounded-full bg-[#38434f] border border-[#fafafa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', letterSpacing: '-0.3px' }}>
+                        {athlete.initials}
+                      </div>
+                      <div className="flex-1 flex flex-col gap-0 justify-center min-w-0">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             setSelectedAthleteForDrawer(athlete)
                           }}
-                          className="text-card-foreground text-sm font-medium hover:text-[var(--u-color-emphasis-background-contrast)] transition-colors text-left"
+                          className="text-[#36485c] text-sm font-bold text-left truncate"
+                          style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
                         >
                           {athlete.name}
                         </button>
-                        <span className="text-muted-foreground text-xs">{athlete.birthdate}</span>
+                        <span className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4', letterSpacing: '0px' }}>{athlete.birthdate}</span>
                       </div>
                     </div>
+                    <div className="flex items-center justify-center flex-shrink-0 pr-3" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={sidebarSelectedAthletes.has(athlete.id)}
+                        onCheckedChange={() => toggleSidebarAthleteSelection(athlete.id)}
+                        className="h-4 w-4 border-2 border-[#36485c] rounded data-[state=checked]:bg-[#085bb4] data-[state=checked]:border-[#085bb4]"
+                        style={{ borderRadius: '6px' }}
+                      />
+                    </div>
                   </div>
-                ))
+                  )
+                })
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <p className="text-card-foreground font-medium mb-1">No Athletes</p>
-                    <p className="text-muted-foreground text-sm">Choose program and registration to get athletes.</p>
+                    <p className="text-[#36485c] font-medium mb-1" style={{ fontFamily: 'Barlow, sans-serif' }}>No Athletes</p>
+                    <p className="text-[#36485c] text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>Choose program and registration to get athletes.</p>
                   </div>
                 </div>
               )}
@@ -1692,7 +1649,7 @@ export default function AssignAthletesPage() {
                   <div className="w-10 h-10 rounded-full bg-foreground flex items-center justify-center text-primary-foreground text-sm font-semibold">
                     {selectedAthleteForDrawer.initials}
                   </div>
-                  <h3 className="text-card-foreground font-semibold">{selectedAthleteForDrawer.name}</h3>
+                  <h3 className="text-[#071c31] font-semibold">{selectedAthleteForDrawer.name}</h3>
                 </div>
               </div>
 
@@ -1722,7 +1679,7 @@ export default function AssignAthletesPage() {
       }}>
         <DialogContent className="max-w-[600px] p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-            <DialogTitle className="text-card-foreground text-xl font-semibold">Invite Athletes</DialogTitle>
+            <DialogTitle className="text-[#071c31] text-xl font-semibold">Invite Athletes</DialogTitle>
           </DialogHeader>
 
           {inviteModalStep === "teams" ? (
@@ -1855,7 +1812,7 @@ export default function AssignAthletesPage() {
       <Dialog open={finalizeModalOpen} onOpenChange={setFinalizeModalOpen}>
         <DialogContent className="max-w-[600px] p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-            <DialogTitle className="text-card-foreground text-xl font-semibold">Finalize Teams</DialogTitle>
+            <DialogTitle className="text-[#071c31] text-xl font-semibold">Finalize Teams</DialogTitle>
           </DialogHeader>
 
           <div className="px-6 pt-4 pb-6">
@@ -1891,6 +1848,142 @@ export default function AssignAthletesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Complete Teams Preview Drawer */}
+      <Sheet open={completeTeamsDrawerOpen} onOpenChange={setCompleteTeamsDrawerOpen}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
+          <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
+            <SheetTitle className="text-[#071c31] font-bold text-lg" style={{ fontFamily: 'Barlow, sans-serif' }}>
+              Review Teams
+            </SheetTitle>
+          </SheetHeader>
+          
+          <div className="flex-1 overflow-y-auto px-6 pt-1 pb-4">
+            <div className="mb-4">
+              <p className="text-[#36485c] text-sm leading-relaxed" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+                Review your rosters, then confirm your teams. A Hudl account manager will finish setting up your teams. You can close this panel to keep working or make changes later if needed.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {teams.map((team) => {
+                const slots = teamAssignments[team.id] || {}
+                const assignedAthleteIds = Object.values(slots).filter(id => id) as string[]
+                const stats = getTeamStats(team.id)
+                
+                if (assignedAthleteIds.length === 0) {
+                  return null // Skip teams with no assigned athletes
+                }
+
+                const isExpanded = expandedTeamsInDrawer.has(team.id)
+                
+                return (
+                  <div
+                    key={team.id}
+                    className="bg-[#fefefe] border border-[#c4c6c8] rounded overflow-hidden"
+                    style={{ borderRadius: '8px' }}
+                  >
+                    <button
+                      onClick={() => {
+                        const newExpanded = new Set(expandedTeamsInDrawer)
+                        if (isExpanded) {
+                          newExpanded.delete(team.id)
+                        } else {
+                          newExpanded.add(team.id)
+                        }
+                        setExpandedTeamsInDrawer(newExpanded)
+                      }}
+                      className="w-full flex items-center justify-between p-4 hover:bg-[#f8f8f9] transition-colors"
+                      style={{ borderRadius: isExpanded ? '8px 8px 0 0' : '8px' }}
+                    >
+                      <h3 className="text-[#071c31] font-bold text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                        {team.name}
+                      </h3>
+                      <div className="flex-none">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-[#36485c]" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-[#36485c]" />
+                        )}
+                      </div>
+                    </button>
+                    
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-2">
+                      {assignedAthleteIds.map((athleteId) => {
+                        const athlete = initialAthletes.find(a => a.id === athleteId)
+                        if (!athlete) return null
+                        
+                        const athleteStatus = athleteStatuses[athleteId] || "Assigned"
+                        const statusStyle = getStatusBadgeStyle(athleteStatus)
+                        
+                        return (
+                          <div
+                            key={athleteId}
+                            className="flex items-center gap-2 p-2 bg-[#f8f8f9] rounded border border-[#c4c6c8]"
+                            style={{ borderRadius: '4px' }}
+                          >
+                            <div className="w-8 h-8 rounded-full bg-[#38434f] border border-[#fafafa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', letterSpacing: '-0.3px' }}>
+                              {athlete.initials}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[#36485c] text-sm font-bold truncate" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4' }}>
+                                {athlete.name}
+                              </div>
+                              <div className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4' }}>
+                                {athlete.birthdate}
+                              </div>
+                            </div>
+                            {statusStyle && (
+                              <div
+                                className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold`}
+                                style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
+                              >
+                                {athleteStatus}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            
+            {teams.filter(team => {
+              const slots = teamAssignments[team.id] || {}
+              return Object.values(slots).filter(id => id).length > 0
+            }).length === 0 && (
+              <div className="text-center py-8 text-[#36485c] text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                No teams have assigned athletes yet.
+              </div>
+            )}
+          </div>
+          
+          <div className="flex-shrink-0 px-6 py-4 border-t border-[#c4c6c8] flex items-center justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setCompleteTeamsDrawerOpen(false)}
+              className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] border-0"
+              style={{ borderRadius: '2px' }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                // Handle submit logic here
+                setCompleteTeamsDrawerOpen(false)
+                // You can add your submit logic here
+              }}
+              className="bg-[#0273e3] hover:bg-[#0260c4] text-white"
+              style={{ borderRadius: '2px' }}
+            >
+              Submit Teams
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
     </div>
   )
