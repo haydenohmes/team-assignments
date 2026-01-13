@@ -1247,7 +1247,7 @@ export default function AssignAthletesPage() {
     <div className="min-h-screen" style={{ backgroundColor: '#f8f8f9' }}>
       {/* Header */}
       <header className="py-0" style={{ backgroundColor: '#fefefe' }}>
-        <div className="max-w-[1600px] mx-auto px-3">
+        <div className="mx-auto px-3">
           <div className="relative flex items-center justify-between h-[56px]">
             <div className="flex items-center">
               <Button variant="ghost" size="icon" className="text-[#36485c] hover:bg-transparent">
@@ -1330,7 +1330,7 @@ export default function AssignAthletesPage() {
         </div>
       </header>
 
-      <div className="max-w-[1600px] mx-auto px-3 pt-3" style={{ backgroundColor: '#f8f8f9' }}>
+      <div className="mx-auto px-3 pt-3" style={{ backgroundColor: '#f8f8f9' }}>
         <div className="flex h-[calc(100vh-56px-12px)] overflow-hidden relative" style={{ gap: '8px' }}>
           {/* Left Sidebar - Filters */}
           <aside

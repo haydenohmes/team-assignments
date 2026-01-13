@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`font-sans antialiased ${_barlow.className}`}>
+      <body className={`font-sans antialiased ${_barlow.className}`} style={{ backgroundColor: 'red' }}>
         <Suspense fallback={<div>Loading...</div>}>
           {children}
         </Suspense>
