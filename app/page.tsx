@@ -2,18 +2,22 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useRef } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
+import { Switch } from "@/components/ui/switch"
+import { ChevronDown, ChevronRight, ChevronUp, ArrowLeft, Filter, Send, Check, GripVertical, X, LayoutGrid, List, ArrowUpDown, ArrowRight, AlertTriangle, CheckCircle2, Loader2, Copy, Lock, Info } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog" // Added Dialog components
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { Skeleton } from "@/components/ui/skeleton"
+import { toast } from "sonner"
+import { makeApiRequest, getUserFriendlyErrorMessage, validateRequestPayload } from "@/lib/api-error-handler"
 
 type AthleteStatus = "Assigned" | "Invited" | "Accepted" | "Rostered" | "Declined" | null
 
@@ -384,7 +388,7 @@ const getStatusBadgeStyle = (status: AthleteStatus) => {
     case "Assigned":
       return { bg: "bg-muted", text: "text-foreground" }
     case "Invited":
-      return { bg: "bg-[#fff9e6]", text: "text-[#705c00]" }
+      return { bg: "bg-[#e7f3fd]", text: "text-[#0c4897]" }
     case "Accepted":
       return { bg: "bg-[#e7f3fd]", text: "text-[#0c4897]" }
     case "Rostered":
@@ -396,12 +400,42 @@ const getStatusBadgeStyle = (status: AthleteStatus) => {
   }
 }
 
+const getStatusAbbreviation = (status: AthleteStatus): string => {
+  switch (status) {
+    case "Assigned":
+      return "A"
+    case "Invited":
+      return "I"
+    case "Accepted":
+      return "Ac"
+    case "Rostered":
+      return "R"
+    case "Declined":
+      return "D"
+    default:
+      return status || ""
+  }
+}
+
 export default function AssignAthletesPage() {
   const router = useRouter()
-  const [seasonExpanded, setSeasonExpanded] = useState(true)
-  const [season2025Expanded, setSeason2025Expanded] = useState(true)
+  const searchParams = useSearchParams()
+  const variant = searchParams.get('variant') || 'default'
+  const useAbbreviations = variant === 'abbreviated' || searchParams.get('abbreviated') === 'true'
+  const isErrorStateVariant = variant === 'error-state'
+  const isAthleteLockingVariant = variant === 'athlete-locking'
+  const isSetupVariant = variant === 'setup'
+  
+  // Error state variant: loading and error states
+  const [isLoadingRoster, setIsLoadingRoster] = useState(isErrorStateVariant)
+  const [rosterError, setRosterError] = useState(false)
+  
+  const [selectedSeason, setSelectedSeason] = useState<string>("2025-2026")
   const [maleExpanded, setMaleExpanded] = useState(true)
   const [femaleExpanded, setFemaleExpanded] = useState(true)
+  
+  // Available seasons
+  const availableSeasons = ["2025-2026", "2024-2025", "2023-2024"]
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [athleteFilterOpen, setAthleteFilterOpen] = useState(false)
   const [selectedSeasons, setSelectedSeasons] = useState<Set<string>>(new Set(["U13-Black"]))
@@ -412,16 +446,28 @@ export default function AssignAthletesPage() {
   const [sidebarSelectedAthletes, setSidebarSelectedAthletes] = useState<Set<string>>(new Set())
 
   const [selectedAthleteForDrawer, setSelectedAthleteForDrawer] = useState<Athlete | null>(null)
+  const [athleteDrawerOpen, setAthleteDrawerOpen] = useState(false)
+  const drawerHasOpenedRef = useRef(false)
 
   const [teamAssignments, setTeamAssignments] = useState<TeamAssignment>({})
-  const [athleteStatuses, setAthleteStatuses] = useState<{ [athleteId: string]: AthleteStatus }>({})
+  // Track status per team assignment: { [teamId: string]: { [athleteId: string]: AthleteStatus } }
+  const [athleteStatuses, setAthleteStatuses] = useState<{ [teamId: string]: { [athleteId: string]: AthleteStatus } }>({})
+  // Track new athletes (athletes added after last invitation send): { [teamId: string]: Set<athleteId> }
+  // This should only be populated when athletes are added during the current session, not persisted across refreshes
+  const [newAthletes, setNewAthletes] = useState<{ [teamId: string]: Set<string> }>({})
+  
+  // Ensure newAthletes is always empty on page load/refresh
+  useEffect(() => {
+    setNewAthletes({})
+  }, [])
   const [draggedAthletes, setDraggedAthletes] = useState<string[]>([])
+  const [primaryDraggedAthlete, setPrimaryDraggedAthlete] = useState<string | null>(null) // Track the athlete that initiated the drag
   const [dragOverSlot, setDragOverSlot] = useState<{ teamId: string; slotIndex: number } | null>(null)
   const [dragOverCollapsedTeam, setDragOverCollapsedTeam] = useState<string | null>(null)
   const [dragOverTeamContainer, setDragOverTeamContainer] = useState<string | null>(null)
   // ADDED state to track drag position for badge display
 
-  const [filtersApplied, setFiltersApplied] = useState(false)
+  // Removed filtersApplied - filtering now happens in real-time
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("list")
 
@@ -432,25 +478,31 @@ export default function AssignAthletesPage() {
 
   const [ageRangeMin, setAgeRangeMin] = useState<string>("")
   const [ageRangeMax, setAgeRangeMax] = useState<string>("")
+  const [selectedStatus, setSelectedStatus] = useState<string>("")
   const [selectedAthleteFilterGender, setSelectedAthleteFilterGender] = useState<string>("")
   const [selectedGrade, setSelectedGrade] = useState<string>("")
   const [selectedGraduationYear, setSelectedGraduationYear] = useState<string>("")
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [completeTeamsDrawerOpen, setCompleteTeamsDrawerOpen] = useState(false)
+  const [completeTeamsModalOpen, setCompleteTeamsModalOpen] = useState(false)
   const [expandedTeamsInDrawer, setExpandedTeamsInDrawer] = useState<Set<string>>(new Set())
   const [inviteModalStep, setInviteModalStep] = useState<"teams" | "email">("teams")
   const [selectedTeamsForInvite, setSelectedTeamsForInvite] = useState<Set<string>>(
     new Set(teams.slice(0, 5).map((t) => t.id)),
   )
+  const [expandedTeamsForInvite, setExpandedTeamsForInvite] = useState<Set<string>>(new Set())
+  const [selectedAthletesForInvite, setSelectedAthletesForInvite] = useState<Map<string, Set<string>>>(new Map())
   const [emailSubject, setEmailSubject] = useState("")
   const [emailBody, setEmailBody] = useState("")
+  const [allowAcceptDecline, setAllowAcceptDecline] = useState(true)
 
   const [selectedProgram, setSelectedProgram] = useState<string>("")
   const [selectedRegistration, setSelectedRegistration] = useState<string>("")
   const [hasSaved, setHasSaved] = useState(false)
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string>("")
 
   const seasonItems = [
     "U13-Black",
@@ -469,10 +521,12 @@ export default function AssignAthletesPage() {
   ]
 
   const programOptions = [
-    "2025-2026 Tryouts (Aug 1 - May 31)",
-    "2025-2026 Fall Tryouts (Sept 15 - Nov 30)",
-    "2025-2026 Winter Tryouts (Dec 1 - Feb 28)",
-    "2025-2026 Spring Tryouts (Mar 1 - May 15)",
+    "Summer Training Camp",
+    "Elite Development Program",
+    "Youth Academy League",
+    "Competitive Team Tryouts",
+    "Skills Development Clinic",
+    "Advanced Training Program",
   ]
 
   const ageOptions = ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"]
@@ -482,6 +536,7 @@ export default function AssignAthletesPage() {
   const athleteFilterCount =
     (ageRangeMin ? 1 : 0) + 
     (ageRangeMax ? 1 : 0) + 
+    (selectedStatus ? 1 : 0) +
     (selectedAthleteFilterGender ? 1 : 0) +
     (selectedGrade ? 1 : 0) +
     (selectedGraduationYear ? 1 : 0)
@@ -499,6 +554,7 @@ export default function AssignAthletesPage() {
   const getTeamStats = (teamId: string) => {
     const slots = teamAssignments[teamId] || {}
     const athleteIds = Object.values(slots)
+    const teamStatuses = athleteStatuses[teamId] || {}
 
     const stats = {
       accepted: 0,
@@ -509,7 +565,7 @@ export default function AssignAthletesPage() {
     }
 
     athleteIds.forEach((athleteId) => {
-      const status = athleteStatuses[athleteId] || "Assigned"
+      const status = teamStatuses[athleteId] || "Assigned"
       if (status === "Accepted") stats.accepted++
       else if (status === "Rostered") stats.rostered++
       else if (status === "Assigned") stats.assigned++
@@ -520,30 +576,119 @@ export default function AssignAthletesPage() {
     return stats
   }
 
+  // Track when drawer has been opened to disable animations on content changes
+  useEffect(() => {
+    if (athleteDrawerOpen && !drawerHasOpenedRef.current) {
+      // Mark as opened after animation completes (600ms)
+      const timer = setTimeout(() => {
+        drawerHasOpenedRef.current = true
+      }, 600)
+      return () => clearTimeout(timer)
+    } else if (!athleteDrawerOpen) {
+      drawerHasOpenedRef.current = false
+    }
+  }, [athleteDrawerOpen])
+
+  // Error state variant: simulate loading then show error
+  useEffect(() => {
+    if (isErrorStateVariant) {
+      // Auto-expand all teams to show skeleton/error inside
+      const allTeamIds = teams.map(t => t.id)
+      setExpandedTeams(new Set(allTeamIds))
+      
+      if (isLoadingRoster) {
+        // Show skeleton for 2 seconds, then show error
+        const timer = setTimeout(() => {
+          setIsLoadingRoster(false)
+          setRosterError(true)
+        }, 2000)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [isErrorStateVariant, isLoadingRoster, setExpandedTeams])
+
   const assignedAthleteIds = getAssignedAthleteIds()
-  const availableAthletes = initialAthletes.filter((athlete) => !assignedAthleteIds.has(athlete.id))
+  // Keep all athletes in the list, even if assigned
+  const availableAthletes = initialAthletes
 
   const [athleteSearchQuery, setAthleteSearchQuery] = useState("")
   const [teamSearchQuery, setTeamSearchQuery] = useState("")
 
-  const searchedAthletes =
-    !selectedProgram || !selectedRegistration
-      ? []
-      : availableAthletes
-          .filter((athlete) => {
-            // Filter by registration - athlete must have at least one matching registration
-            const hasMatchingRegistration = selectedRegistration &&
-              athlete.registrations.includes(selectedRegistration)
-            return hasMatchingRegistration && athlete.name.toLowerCase().includes(athleteSearchQuery.toLowerCase())
+  // Calculate athlete age from birthdate
+  const calculateAge = (birthdate: string): number => {
+    const [month, day, year] = birthdate.split('/').map(Number)
+    const birth = new Date(year, month - 1, day)
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const monthDiff = today.getMonth() - birth.getMonth()
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  // Filter athletes based on all criteria
+  const filteredAthletes = !selectedProgram || !selectedRegistration
+    ? []
+    : availableAthletes.filter((athlete) => {
+        // Filter by registration - athlete must have at least one matching registration
+        const hasMatchingRegistration = selectedRegistration &&
+          athlete.registrations.includes(selectedRegistration)
+        if (!hasMatchingRegistration) return false
+
+        // Filter by search query
+        if (!athlete.name.toLowerCase().includes(athleteSearchQuery.toLowerCase())) {
+          return false
+        }
+
+        // Filter by age range
+        if (ageRangeMin || ageRangeMax) {
+          const age = calculateAge(athlete.birthdate)
+          if (ageRangeMin && age < parseInt(ageRangeMin)) return false
+          if (ageRangeMax && age > parseInt(ageRangeMax)) return false
+        }
+
+        // Filter by status - check if athlete has this status on any team
+        if (selectedStatus) {
+          const hasStatus = Object.keys(athleteStatuses).some(teamId => {
+            const teamStatuses = athleteStatuses[teamId] || {}
+            return teamStatuses[athlete.id] === selectedStatus
           })
-          .sort((a, b) => {
-            if (athleteSortOrder === "asc") {
-              return a.name.localeCompare(b.name)
-            } else {
-              return b.name.localeCompare(a.name)
+          if (!hasStatus) {
+            // Also check if no status is set (defaults to "Assigned")
+            const hasAnyAssignment = assignedAthleteIds.has(athlete.id)
+            if (!hasAnyAssignment || selectedStatus !== "Assigned") {
+              return false
             }
-          })
-          .slice(0, filtersApplied ? 20 : undefined)
+          }
+        }
+
+        // Filter by gender (we don't have gender in athlete data, so skip for now)
+        // if (selectedAthleteFilterGender) {
+        //   // Would need gender field in athlete type
+        // }
+
+        // Filter by grade (we don't have grade in athlete data, so skip for now)
+        // if (selectedGrade) {
+        //   // Would need grade field in athlete type
+        // }
+
+        // Filter by graduation year (we don't have graduation year in athlete data, so skip for now)
+        // if (selectedGraduationYear) {
+        //   // Would need graduation year field in athlete type
+        // }
+
+        return true
+      })
+
+  const searchedAthletes = filteredAthletes
+    .sort((a, b) => {
+      if (athleteSortOrder === "asc") {
+        return a.name.localeCompare(b.name)
+      } else {
+        return b.name.localeCompare(a.name)
+      }
+    })
 
   const handleDragStart = (e: React.DragEvent, athleteId: string) => {
     const isSidebarSelected = sidebarSelectedAthletes.has(athleteId)
@@ -563,12 +708,14 @@ export default function AssignAthletesPage() {
     }
 
     setDraggedAthletes(athletesToDrag)
+    setPrimaryDraggedAthlete(athleteId) // Track which athlete initiated the drag
     e.dataTransfer.effectAllowed = "move"
     e.dataTransfer.setData("text/plain", athletesToDrag.join(","))
   }
 
   const handleDragEnd = () => {
     setDraggedAthletes([])
+    setPrimaryDraggedAthlete(null) // Clear primary dragged athlete
     setDragOverSlot(null)
     setDragOverCollapsedTeam(null)
     setDragOverTeamContainer(null)
@@ -599,19 +746,14 @@ export default function AssignAthletesPage() {
     const newAssignments = { ...teamAssignments }
     const newStatuses = { ...athleteStatuses }
 
-    // Remove athletes from their current positions
-    athleteIds.forEach((athleteId) => {
-      Object.keys(newAssignments).forEach((teamKey) => {
-        Object.keys(newAssignments[teamKey]).forEach((slotKey) => {
-          if (newAssignments[teamKey][Number(slotKey)] === athleteId) {
-            delete newAssignments[teamKey][Number(slotKey)]
-          }
-        })
-      })
-    })
-
+    // Allow athletes to be on multiple teams - don't remove from previous positions
     if (!newAssignments[teamId]) {
       newAssignments[teamId] = {}
+    }
+
+    // Initialize team statuses if needed
+    if (!newStatuses[teamId]) {
+      newStatuses[teamId] = {}
     }
 
     let currentSlot = slotIndex
@@ -625,7 +767,8 @@ export default function AssignAthletesPage() {
       }
       if (currentSlot < teams.find((t) => t.id === teamId)!.slots) {
         newAssignments[teamId][currentSlot] = athleteId
-        newStatuses[athleteId] = "Assigned"
+        // Set status for this specific team assignment
+        newStatuses[teamId][athleteId] = "Assigned"
         currentSlot++
       }
     })
@@ -633,6 +776,7 @@ export default function AssignAthletesPage() {
     setTeamAssignments(newAssignments)
     setAthleteStatuses(newStatuses)
     setDraggedAthletes([])
+    setPrimaryDraggedAthlete(null)
     setDragOverSlot(null)
 
     // Clear selection after drop
@@ -652,7 +796,11 @@ export default function AssignAthletesPage() {
 
     if (athleteId) {
       const newStatuses = { ...athleteStatuses }
-      delete newStatuses[athleteId]
+      if (newStatuses[teamId]) {
+        const newTeamStatuses = { ...newStatuses[teamId] }
+        delete newTeamStatuses[athleteId]
+        newStatuses[teamId] = newTeamStatuses
+      }
       setAthleteStatuses(newStatuses)
     }
 
@@ -662,10 +810,10 @@ export default function AssignAthletesPage() {
   const clearAthleteFilters = () => {
     setAgeRangeMin("")
     setAgeRangeMax("")
+    setSelectedStatus("")
     setSelectedAthleteFilterGender("")
     setSelectedGrade("")
     setSelectedGraduationYear("")
-    setFiltersApplied(false)
   }
 
   const clearFilters = () => {
@@ -700,6 +848,36 @@ export default function AssignAthletesPage() {
       newSelected.add(teamId)
     }
     setSelectedTeamsForInvite(newSelected)
+  }
+
+  const toggleTeamExpansionForInvite = (teamId: string) => {
+    const newExpanded = new Set(expandedTeamsForInvite)
+    if (newExpanded.has(teamId)) {
+      newExpanded.delete(teamId)
+    } else {
+      newExpanded.add(teamId)
+    }
+    setExpandedTeamsForInvite(newExpanded)
+  }
+
+  const toggleAthleteForInvite = (teamId: string, athleteId: string) => {
+    const newSelected = new Map(selectedAthletesForInvite)
+    const teamAthletes = newSelected.get(teamId) || new Set<string>()
+    const newTeamAthletes = new Set(teamAthletes)
+    
+    if (newTeamAthletes.has(athleteId)) {
+      newTeamAthletes.delete(athleteId)
+    } else {
+      newTeamAthletes.add(athleteId)
+    }
+    
+    if (newTeamAthletes.size > 0) {
+      newSelected.set(teamId, newTeamAthletes)
+    } else {
+      newSelected.delete(teamId)
+    }
+    
+    setSelectedAthletesForInvite(newSelected)
   }
 
   const filteredTeams = teams.filter((team) => {
@@ -759,12 +937,59 @@ export default function AssignAthletesPage() {
     }
   }, [teamSearchQuery, teamAssignments, selectedSeasons, expandedTeams])
 
-  // Autosave function - called explicitly after user actions complete
-  const triggerAutosave = () => {
-    setSaveStatus("saving")
+  // Auto-expand teams with no athletes to show "Add Athletes" container
+  useEffect(() => {
+    const teamsToExpand = new Set<string>()
+    
+    filteredTeams.forEach((team) => {
+      const stats = getTeamStats(team.id)
+      // If team has no assigned athletes, expand it
+      if (stats.assigned === 0 && !expandedTeams.has(team.id)) {
+        teamsToExpand.add(team.id)
+      }
+    })
 
-    // Simulate save operation (replace with actual API call)
-    setTimeout(() => {
+    // Expand all empty teams at once
+    if (teamsToExpand.size > 0) {
+      setExpandedTeams((prev) => {
+        const newExpanded = new Set(prev)
+        teamsToExpand.forEach((teamId) => newExpanded.add(teamId))
+        return newExpanded
+      })
+    }
+  }, [filteredTeams, teamAssignments, athleteStatuses, expandedTeams])
+
+  // Autosave function - called explicitly after user actions complete
+  const triggerAutosave = async () => {
+    setSaveStatus("saving")
+    setSaveErrorMessage("")
+
+    try {
+      // Prepare the payload to save
+      const payload = {
+        teamAssignments,
+        athleteStatuses,
+        // Add any other data you need to save
+      }
+
+      // Validate payload before sending
+      const validation = validateRequestPayload(payload)
+      if (!validation.isValid) {
+        throw new Error(validation.error || "Invalid request data")
+      }
+
+      // Replace this URL with your actual API endpoint
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api/save-assignments"
+      
+      // Make the API call with proper error handling
+      await makeApiRequest(apiUrl, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
       setSaveStatus("saved")
       setHasSaved(true)
 
@@ -772,7 +997,24 @@ export default function AssignAthletesPage() {
       setTimeout(() => {
         setSaveStatus("idle")
       }, 2000)
-    }, 500) // Short delay to simulate API call
+    } catch (error) {
+      // Handle errors with user-friendly messages
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      setSaveErrorMessage(errorMessage)
+      setSaveStatus("error")
+      
+      // Show toast notification
+      toast.error("Failed to save", {
+        description: errorMessage,
+        duration: 5000,
+      })
+
+      // Reset to idle after showing error for 5 seconds
+      setTimeout(() => {
+        setSaveStatus("idle")
+        setSaveErrorMessage("")
+      }, 5000)
+    }
   }
 
   // COMBINED selection states for drag operations
@@ -822,19 +1064,14 @@ export default function AssignAthletesPage() {
     const newAssignments = { ...teamAssignments }
     const newStatuses = { ...athleteStatuses }
 
-    // Remove athletes from their current positions
-    athleteIds.forEach((athleteId) => {
-      Object.keys(newAssignments).forEach((teamKey) => {
-        Object.keys(newAssignments[teamKey]).forEach((slotKey) => {
-          if (newAssignments[teamKey][Number(slotKey)] === athleteId) {
-            delete newAssignments[teamKey][Number(slotKey)]
-          }
-        })
-      })
-    })
-
+    // Allow athletes to be on multiple teams - don't remove from previous positions
     if (!newAssignments[teamId]) {
       newAssignments[teamId] = {}
+    }
+
+    // Initialize team statuses if needed
+    if (!newStatuses[teamId]) {
+      newStatuses[teamId] = {}
     }
 
     const team = teams.find((t) => t.id === teamId)
@@ -842,6 +1079,12 @@ export default function AssignAthletesPage() {
 
     // Find first available slot
     let currentSlot = 0
+    const newAthletesForTeam = new Set<string>()
+    
+    // Check if this team already has any "Invited" athletes (meaning invites were already sent)
+    const existingTeamStatuses = athleteStatuses[teamId] || {}
+    const hasInvitedAthletes = Object.values(existingTeamStatuses).some(status => status === "Invited")
+    
     athleteIds.forEach((athleteId) => {
       // Find next available slot
       while (newAssignments[teamId][currentSlot] !== undefined && currentSlot < team.slots) {
@@ -849,14 +1092,28 @@ export default function AssignAthletesPage() {
       }
       if (currentSlot < team.slots) {
         newAssignments[teamId][currentSlot] = athleteId
-        newStatuses[athleteId] = "Assigned"
+        // Set status for this specific team assignment
+        newStatuses[teamId][athleteId] = "Assigned"
+        // Only mark as new athlete if team already has invited athletes (invites were sent)
+        if (hasInvitedAthletes) {
+          newAthletesForTeam.add(athleteId)
+        }
         currentSlot++
       }
     })
 
+    // Update new athletes state (only if team had invited athletes)
+    if (newAthletesForTeam.size > 0) {
+      setNewAthletes(prev => ({
+        ...prev,
+        [teamId]: new Set([...(prev[teamId] || []), ...newAthletesForTeam])
+      }))
+    }
+
     setTeamAssignments(newAssignments)
     setAthleteStatuses(newStatuses)
     setDraggedAthletes([])
+    setPrimaryDraggedAthlete(null)
     setDragOverCollapsedTeam(null)
 
     // Expand the team to show the assignment
@@ -899,19 +1156,14 @@ export default function AssignAthletesPage() {
     const newAssignments = { ...teamAssignments }
     const newStatuses = { ...athleteStatuses }
 
-    // Remove athletes from their current positions
-    athleteIds.forEach((athleteId) => {
-      Object.keys(newAssignments).forEach((teamKey) => {
-        Object.keys(newAssignments[teamKey]).forEach((slotKey) => {
-          if (newAssignments[teamKey][Number(slotKey)] === athleteId) {
-            delete newAssignments[teamKey][Number(slotKey)]
-          }
-        })
-      })
-    })
-
+    // Allow athletes to be on multiple teams - don't remove from previous positions
     if (!newAssignments[teamId]) {
       newAssignments[teamId] = {}
+    }
+
+    // Initialize team statuses if needed
+    if (!newStatuses[teamId]) {
+      newStatuses[teamId] = {}
     }
 
     const team = teams.find((t) => t.id === teamId)
@@ -926,14 +1178,38 @@ export default function AssignAthletesPage() {
       }
       if (currentSlot < team.slots) {
         newAssignments[teamId][currentSlot] = athleteId
-        newStatuses[athleteId] = "Assigned"
+        // Set status for this specific team assignment
+        newStatuses[teamId][athleteId] = "Assigned"
         currentSlot++
       }
     })
 
+    // Check if this team already has any "Invited" athletes (meaning invites were already sent)
+    const existingTeamStatuses = athleteStatuses[teamId] || {}
+    const hasInvitedAthletes = Object.values(existingTeamStatuses).some(status => status === "Invited")
+    
+    // Mark athletes as new (only if team had invited athletes)
+    const newAthletesForTeam = new Set<string>()
+    if (hasInvitedAthletes) {
+      athleteIds.forEach((athleteId) => {
+        if (newAssignments[teamId] && Object.values(newAssignments[teamId]).includes(athleteId)) {
+          newAthletesForTeam.add(athleteId)
+        }
+      })
+    }
+
+    // Update new athletes state (only if team had invited athletes)
+    if (newAthletesForTeam.size > 0) {
+      setNewAthletes(prev => ({
+        ...prev,
+        [teamId]: new Set([...(prev[teamId] || []), ...newAthletesForTeam])
+      }))
+    }
+
     setTeamAssignments(newAssignments)
     setAthleteStatuses(newStatuses)
     setDraggedAthletes([])
+    setPrimaryDraggedAthlete(null)
     setDragOverTeamContainer(null)
 
     // Clear selection after drop
@@ -956,6 +1232,17 @@ export default function AssignAthletesPage() {
     // but this handler is here for future use if needed
   }
 
+  // VARIANT-SPECIFIC LOGIC
+  // ============================================
+  // Use the `variant` variable to conditionally render different versions:
+  // - variant === 'default' → Current/default experience
+  // - variant === 'a' → Version A
+  // - variant === 'b' → Version B
+  //
+  // Example:
+  // const headerColor = variant === 'a' ? '#ff0000' : '#fefefe'
+  // ============================================
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#f8f8f9' }}>
       {/* Header */}
@@ -968,22 +1255,54 @@ export default function AssignAthletesPage() {
               </Button>
             </div>
 
-            <h1 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[#071c31] font-bold text-base text-center whitespace-nowrap" style={{ fontFamily: 'Barlow, sans-serif' }}>Assign Athletes</h1>
+            <h1 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[#071c31] font-bold text-base text-center whitespace-nowrap" style={{ fontFamily: 'Barlow, sans-serif' }}>
+              Assign Athletes
+              {variant !== 'default' && variant !== 'error-state' && variant !== 'athlete-locking' && (
+                <span className="ml-2 text-xs font-normal text-[#0273e3]">(Variant {variant.toUpperCase()})</span>
+              )}
+              {variant === 'error-state' && (
+                <span className="ml-2 text-xs font-normal text-[#0273e3]">(Error State)</span>
+              )}
+              {variant === 'athlete-locking' && (
+                <span className="ml-2 text-xs font-normal text-[#0273e3]">(Athlete Locking)</span>
+              )}
+              {useAbbreviations && (
+                <span className="ml-2 text-xs font-normal text-[#0273e3]">(Abbreviated)</span>
+              )}
+            </h1>
 
             <div className="flex items-center justify-end gap-2">
               {/* Autosave Indicator */}
               {saveStatus !== "idle" && (
-                <div className="flex items-center gap-2 text-sm text-[#36485c] pr-4">
+                <div className="flex items-center gap-2 text-sm pr-4">
                   {saveStatus === "saving" && (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Saving...</span>
+                      <Loader2 className="h-4 w-4 animate-spin text-[#36485c]" />
+                      <span className="text-[#36485c]">Saving...</span>
                     </>
                   )}
                   {saveStatus === "saved" && (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-[#36485c]" />
-                      <span>Saved</span>
+                      <span className="text-[#36485c]">Saved</span>
+                    </>
+                  )}
+                  {saveStatus === "error" && (
+                    <>
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      <span className="text-red-600">Save failed</span>
+                      {saveErrorMessage && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help underline decoration-dotted">
+                              (hover for details)
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="max-w-xs">{saveErrorMessage}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </>
                   )}
                 </div>
@@ -991,13 +1310,21 @@ export default function AssignAthletesPage() {
               <Button onClick={() => setInviteModalOpen(true)} className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" style={{ borderRadius: '2px' }}>
                 Send Invitations
               </Button>
-              <Button 
-                onClick={() => setCompleteTeamsDrawerOpen(true)}
-                className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] h-9 px-4" 
-                style={{ borderRadius: '2px' }}
-              >
-                Review Teams
-              </Button>
+              {variant !== 'default' && !isSetupVariant && (
+                <Button 
+                  onClick={() => {
+                    if (variant === 'b') {
+                      setCompleteTeamsModalOpen(true)
+                    } else {
+                      setCompleteTeamsDrawerOpen(true)
+                    }
+                  }}
+                  className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] h-9 px-4" 
+                  style={{ borderRadius: '2px' }}
+                >
+                  Review Teams
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1012,23 +1339,42 @@ export default function AssignAthletesPage() {
             }`}
           >
             <div
-              className={`w-[320px] transition-opacity duration-300 overflow-y-auto flex-1 pl-0 pr-0 pt-0 pb-3 ${sidebarVisible ? "opacity-100" : "opacity-0"}`}
+              className={`w-[320px] transition-opacity duration-300 flex-1 flex flex-col pl-0 pr-0 pt-0 pb-0 ${sidebarVisible ? "opacity-100" : "opacity-0"}`}
             >
-              <div className="bg-[#fefefe] rounded p-4">
-                <h2 className="text-[#071c31] font-bold text-base mb-0" style={{ fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}>Teams</h2>
+              <div className="bg-[#fefefe] rounded p-4 pb-4 flex-1 flex flex-col overflow-y-auto">
+                <div className="mb-2">
+                  <h2 className="text-[#071c31] font-bold text-base" style={{ fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}>Teams</h2>
+                </div>
+
+                {/* Season Selector */}
+                <div className="mt-2 mb-2">
+                  <Select value={selectedSeason} onValueChange={setSelectedSeason}>
+                    <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#36485c] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent [&>span[data-placeholder]]:text-[#85909e]" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                      <SelectValue placeholder="Season" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSeasons.map((season) => (
+                        <SelectItem key={season} value={season}>
+                          {season}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Teams Filter */}
-                <div className="mt-4 space-y-1">
-                  <button
-                    className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
-                    onClick={() => setMaleExpanded(!maleExpanded)}
-                    style={{ fontFamily: 'Barlow, sans-serif' }}
-                  >
-                    <div className="flex-none rotate-180">
-                      {maleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    </div>
-                    <span>Male</span>
-                  </button>
+                <div className="mt-2 space-y-1">
+                  <div className="pl-1 space-y-1">
+                      <button
+                        className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
+                        onClick={() => setMaleExpanded(!maleExpanded)}
+                        style={{ fontFamily: 'Barlow, sans-serif' }}
+                      >
+                        <div className="flex-none">
+                          {maleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
+                        <span>Male</span>
+                      </button>
                   {maleExpanded && (
                     <div className="ml-4 border-l border-[#c4c6c8] pl-1 space-y-0.5">
                       {teams
@@ -1055,41 +1401,42 @@ export default function AssignAthletesPage() {
                     </div>
                   )}
 
-                  <button
-                    className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
-                    onClick={() => setFemaleExpanded(!femaleExpanded)}
-                    style={{ fontFamily: 'Barlow, sans-serif' }}
-                  >
-                    <div className="flex-none rotate-180">
-                      {femaleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    </div>
-                    <span>Female</span>
-                  </button>
-                  {femaleExpanded && (
-                    <div className="ml-4 border-l border-[#c4c6c8] pl-1 space-y-0.5">
-                      {teams
-                        .filter((team) => team.gender === "Female")
-                        .map((team) => (
-                          <button
-                            key={team.name}
-                            onClick={() => toggleSeason(team.name)}
-                            className={`text-sm h-8 px-2 rounded w-full text-left flex items-center justify-between transition-colors ${
-                              selectedSeasons.has(team.name) 
-                                ? "bg-[#e0e1e1] text-[#071c31] font-bold" 
-                                : "text-[#36485c] font-medium hover:bg-[#e0e1e1]"
-                            }`}
-                            style={{ fontFamily: 'Barlow, sans-serif' }}
-                          >
-                            <span>{team.name}</span>
-                            {selectedSeasons.has(team.name) && (
-                              <div className="flex items-center justify-center pr-1">
-                                <Check className="h-4 w-4 text-[#071c31]" />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                    </div>
-                  )}
+                      <button
+                        className="flex items-center gap-2 text-[#071c31] text-sm font-bold h-8 w-full px-2 rounded hover:bg-[#e0e1e1] transition-colors"
+                        onClick={() => setFemaleExpanded(!femaleExpanded)}
+                        style={{ fontFamily: 'Barlow, sans-serif' }}
+                      >
+                        <div className="flex-none">
+                          {femaleExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
+                        <span>Female</span>
+                      </button>
+                      {femaleExpanded && (
+                        <div className="ml-4 border-l border-[#c4c6c8] pl-1 space-y-0.5">
+                          {teams
+                            .filter((team) => team.gender === "Female")
+                            .map((team) => (
+                              <button
+                                key={team.name}
+                                onClick={() => toggleSeason(team.name)}
+                                className={`text-sm h-8 px-2 rounded w-full text-left flex items-center justify-between transition-colors ${
+                                  selectedSeasons.has(team.name) 
+                                    ? "bg-[#e0e1e1] text-[#071c31] font-bold" 
+                                    : "text-[#36485c] font-medium hover:bg-[#e0e1e1]"
+                                }`}
+                                style={{ fontFamily: 'Barlow, sans-serif' }}
+                              >
+                                <span>{team.name}</span>
+                                {selectedSeasons.has(team.name) && (
+                                  <div className="flex items-center justify-center pr-1">
+                                    <Check className="h-4 w-4 text-[#071c31]" />
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1119,7 +1466,7 @@ export default function AssignAthletesPage() {
                     placeholder="Search for athletes or teams"
                     value={teamSearchQuery}
                     onChange={(e) => setTeamSearchQuery(e.target.value)}
-                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded"
+                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded placeholder:text-base"
                     style={{ borderRadius: '2px', fontSize: '16px', fontFamily: 'Helvetica, sans-serif' }}
                   />
                 </div>
@@ -1153,6 +1500,16 @@ export default function AssignAthletesPage() {
                 </div>
               </div>
             </div>
+
+            {isSetupVariant && (
+              <div className="px-4 py-3 bg-[#f0f0f0] sticky top-0 z-10 mb-3 flex items-start gap-2" style={{ borderRadius: '4px' }}>
+                <Info className="h-5 w-5 text-[#36485c] flex-shrink-0 mt-0.5" />
+                <p className="text-[#36485c] text-sm" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+                  Drag athletes into teams to create your rosters, then contact your{' '}
+                  <span className="text-[#0273e3] font-medium">Hudl account manager</span> to get your teams set up in Hudl.
+                </p>
+              </div>
+            )}
 
             <div className="overflow-y-auto flex-1">
               {/* Team cards - each in separate white box */}
@@ -1223,6 +1580,42 @@ export default function AssignAthletesPage() {
                         </button>
 
                         {expandedTeams.has(team.id) && (() => {
+                          // Error state variant: show skeleton or error inside team container
+                          if (isErrorStateVariant && isLoadingRoster) {
+                            return (
+                              <div className="rounded mt-3" style={{ borderRadius: '8px', padding: '4px 0 0 0' }}>
+                                <div className="space-y-2">
+                                  {[1, 2, 3, 4].map((i) => (
+                                    <div key={i} className="flex items-center gap-2 p-3 bg-[#f8f8f9] rounded border border-[#c4c6c8]" style={{ borderRadius: '4px', height: '48px' }}>
+                                      <Skeleton className="h-8 w-8 rounded-full" />
+                                      <div className="flex-1 space-y-1">
+                                        <Skeleton className="h-4 w-32" />
+                                        <Skeleton className="h-3 w-24" />
+                                      </div>
+                                      <Skeleton className="h-6 w-16" />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+                          
+                          if (isErrorStateVariant && rosterError) {
+                            return (
+                              <div className="rounded mt-3" style={{ borderRadius: '8px', padding: '4px 0 0 0' }}>
+                                <div className="flex flex-col items-center justify-center py-8 px-4 bg-[#f8f8f9] rounded border border-[#c4c6c8]" style={{ borderRadius: '8px' }}>
+                                  <AlertTriangle className="h-8 w-8 text-red-600 mb-3" />
+                                  <h4 className="text-[#071c31] font-bold text-sm mb-1" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                                    Unable to Fetch Roster
+                                  </h4>
+                                  <p className="text-[#36485c] text-xs text-center" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                                    We could not fetch the roster. Please try refreshing the page or contact support if the problem persists.
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          }
+                          
                           const teamSlots = teamAssignments[team.id] || {}
                           const filledSlotIndices = Object.keys(teamSlots)
                             .map(Number)
@@ -1232,7 +1625,7 @@ export default function AssignAthletesPage() {
                           return (
                             <div
                               className="rounded"
-                              style={{ borderRadius: '8px', padding: isEmpty ? '4px 0 0 0' : '8px 0 0 0', marginTop: '16px' }}
+                              style={{ borderRadius: '8px', padding: isEmpty ? '0px 0 0 0' : '4px 0 0 0', marginTop: '12px' }}
                             >
                               {(() => {
 
@@ -1244,51 +1637,116 @@ export default function AssignAthletesPage() {
                                   : null
                                 const isDropTarget =
                                   dragOverSlot?.teamId === team.id && dragOverSlot?.slotIndex === slotIndex
-                                const athleteStatus = assignedAthleteId ? (athleteStatuses[assignedAthleteId] || "Assigned") : null
+                                const teamStatuses = athleteStatuses[team.id] || {}
+                                const athleteStatus = assignedAthleteId ? (teamStatuses[assignedAthleteId] || "Assigned") : null
                                 const statusStyle = athleteStatus ? getStatusBadgeStyle(athleteStatus) : null
+                                const isLocked = isAthleteLockingVariant && athleteStatus === "Invited"
 
-                                return (
-                                  <div
-                                    key={slotIndex}
-                                    draggable
-                                    onDragStart={(e) => handleDragStart(e, assignedAthleteId)}
-                                    onDragEnd={handleDragEnd}
-                                    className="flex items-center gap-0 p-0 bg-[#f8f8f9] rounded hover:bg-[#f0f0f0] transition-colors cursor-move border border-[#c4c6c8]"
-                                    style={{ height: '48px', borderRadius: '4px', marginBottom: '8px' }}
-                                  >
+                                const athleteCardContent = (
+                                  <>
                                     {assignedAthlete && (
                                       <>
+                                        {/* Badge for multiple athletes being dragged - only show on the primary dragged athlete */}
+                                        {draggedAthletes.length > 1 && primaryDraggedAthlete === assignedAthleteId && (
+                                          <div className="absolute -top-2 -right-2 z-10 bg-[#0273e3] text-white rounded-full flex items-center justify-center font-bold shadow-lg" style={{ width: '24px', height: '24px', fontSize: '12px' }}>
+                                            {draggedAthletes.length}
+                                          </div>
+                                        )}
                                         <div className="bg-[#eff0f0] flex items-center justify-center flex-shrink-0 h-full" style={{ width: '32px', padding: '0 4px', borderTopLeftRadius: '4px', borderBottomLeftRadius: '4px' }}>
-                                          <GripVertical className="h-6 w-6 text-[#36485c]" />
+                                          {isLocked ? (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <div className="flex items-center justify-center">
+                                                  <Lock className="h-4 w-4 text-[#36485c]" />
+                                                </div>
+                                              </TooltipTrigger>
+                                              <TooltipContent className="bg-black text-white border-black">
+                                                <p>Athlete can't be moved because invites have been sent</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          ) : (
+                                            <GripVertical className="h-6 w-6 text-[#36485c]" />
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-2 flex-1 min-w-0 px-3 py-3">
                                           <div className="w-8 h-8 rounded-full bg-[#38434f] border border-[#fafafa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', letterSpacing: '-0.3px' }}>
                                             {assignedAthlete.initials}
                                           </div>
                                           <div className="flex-1 flex flex-col gap-0 justify-center min-w-0">
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                setSelectedAthleteForDrawer(assignedAthlete)
-                                              }}
-                                              className="text-[#36485c] text-sm font-bold text-left truncate"
-                                              style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
-                                            >
-                                              {assignedAthlete.name}
-                                            </button>
+                                            {isLocked ? (
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      if (!athleteDrawerOpen) {
+                                                        drawerHasOpenedRef.current = false
+                                                        setAthleteDrawerOpen(true)
+                                                        setSelectedAthleteForDrawer(assignedAthlete)
+                                                      } else {
+                                                        // Just update content, drawer is already open
+                                                        setSelectedAthleteForDrawer(assignedAthlete)
+                                                      }
+                                                    }}
+                                                    className="text-[#36485c] text-sm font-bold text-left truncate hover:text-[#607081] cursor-pointer transition-colors"
+                                                    style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
+                                                  >
+                                                    {assignedAthlete.name}
+                                                  </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="bg-black text-white border-black">
+                                                  <p>Athlete can't be moved because invites have been sent</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            ) : (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  if (!athleteDrawerOpen) {
+                                                    drawerHasOpenedRef.current = false
+                                                    setAthleteDrawerOpen(true)
+                                                    setSelectedAthleteForDrawer(assignedAthlete)
+                                                  } else {
+                                                    // Just update content, drawer is already open
+                                                    setSelectedAthleteForDrawer(assignedAthlete)
+                                                  }
+                                                }}
+                                                className="text-[#36485c] text-sm font-bold text-left truncate hover:text-[#607081] cursor-pointer transition-colors"
+                                                style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
+                                              >
+                                                {assignedAthlete.name}
+                                              </button>
+                                            )}
                                             <span className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4', letterSpacing: '0px' }}>{assignedAthlete.birthdate}</span>
                                           </div>
                                         </div>
                                         {statusStyle && athleteStatus && (
                                           <Popover>
                                             <PopoverTrigger asChild>
-                                              <button
-                                                onClick={(e) => e.stopPropagation()}
-                                                className={`bg-[#e0e1e1] text-[#36485c] text-xs px-2 py-1 rounded font-bold cursor-pointer hover:opacity-80 transition-opacity`}
-                                                style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
-                                              >
-                                                {athleteStatus}
-                                              </button>
+                                              {isLocked && athleteStatus === "Invited" ? (
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <button
+                                                      onClick={(e) => e.stopPropagation()}
+                                                      className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold cursor-pointer hover:opacity-80 transition-opacity ${athleteStatus === "Invited" ? "mr-3" : ""}`}
+                                                      style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
+                                                    >
+                                                      {useAbbreviations ? athleteStatus : (viewMode === "grid" ? getStatusAbbreviation(athleteStatus) : athleteStatus)}
+                                                    </button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent className="bg-black text-white border-black">
+                                                    <p>Athlete can't be moved because invites have been sent</p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              ) : (
+                                                <button
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold cursor-pointer hover:opacity-80 transition-opacity ${athleteStatus === "Invited" ? "mr-3" : ""}`}
+                                                  style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
+                                                >
+                                                  {useAbbreviations ? athleteStatus : (viewMode === "grid" ? getStatusAbbreviation(athleteStatus) : athleteStatus)}
+                                                </button>
+                                              )}
                                             </PopoverTrigger>
                                             <PopoverContent className="w-48 p-2" align="end">
                                               <div className="space-y-1">
@@ -1299,10 +1757,17 @@ export default function AssignAthletesPage() {
                                                       key={status}
                                                       onClick={() => {
                                                         if (assignedAthleteId) {
-                                                          setAthleteStatuses(prev => ({
-                                                            ...prev,
-                                                            [assignedAthleteId]: status
-                                                          }))
+                                                          setAthleteStatuses(prev => {
+                                                            const updated = { ...prev }
+                                                            if (!updated[team.id]) {
+                                                              updated[team.id] = {}
+                                                            }
+                                                            updated[team.id] = {
+                                                              ...updated[team.id],
+                                                              [assignedAthleteId]: status
+                                                            }
+                                                            return updated
+                                                          })
                                                           // Trigger autosave after status change
                                                           triggerAutosave()
                                                         }
@@ -1320,17 +1785,34 @@ export default function AssignAthletesPage() {
                                             </PopoverContent>
                                           </Popover>
                                         )}
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-[#36485c] hover:text-[#36485c] hover:bg-transparent"
-                                          onClick={() => removeAthleteFromSlot(team.id, slotIndex)}
-                                          style={{ borderRadius: '4px' }}
-                                        >
-                                          <X className="h-4 w-4" />
-                                        </Button>
+                                        {!isLocked && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-[#36485c] hover:text-[#36485c] hover:bg-transparent"
+                                            onClick={() => removeAthleteFromSlot(team.id, slotIndex)}
+                                            style={{ borderRadius: '4px' }}
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </Button>
+                                        )}
                                       </>
                                     )}
+                                  </>
+                                )
+
+                                return (
+                                  <div
+                                    key={slotIndex}
+                                    draggable={!isLocked}
+                                    onDragStart={!isLocked ? (e) => handleDragStart(e, assignedAthleteId) : undefined}
+                                    onDragEnd={!isLocked ? handleDragEnd : undefined}
+                                    className={`flex items-center gap-0 p-0 bg-[#f8f8f9] rounded transition-colors border border-[#c4c6c8] relative ${
+                                      isLocked ? 'cursor-not-allowed opacity-75' : 'hover:bg-[#f0f0f0] cursor-move'
+                                    }`}
+                                    style={{ height: '48px', borderRadius: '4px', marginBottom: '8px' }}
+                                  >
+                                    {athleteCardContent}
                                   </div>
                                 )
                               })
@@ -1375,11 +1857,11 @@ export default function AssignAthletesPage() {
                     )
                   })}
                 </div>
-              ) : (
+              ) : !isErrorStateVariant ? (
                 <div className="flex items-center justify-center h-[calc(100%-80px)]">
                   <p className="text-[#36485c] text-center" style={{ fontFamily: 'Barlow, sans-serif' }}>Filter your teams to start team assignments</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </main>
 
@@ -1392,8 +1874,8 @@ export default function AssignAthletesPage() {
 
               <div className="space-y-2 mb-2">
                 <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                  <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#36485c] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
-                    <SelectValue placeholder="2025 Spring Open Gym" />
+                  <SelectTrigger className="min-h-[40px] px-4 [&>span[data-placeholder]]:text-[#85909e]" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                    <SelectValue placeholder="Program" />
                   </SelectTrigger>
                   <SelectContent>
                     {programOptions.map((program) => (
@@ -1405,8 +1887,8 @@ export default function AssignAthletesPage() {
                 </Select>
 
                 <Select value={selectedRegistration} onValueChange={setSelectedRegistration} disabled={!selectedProgram}>
-                  <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#36485c] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] disabled:cursor-not-allowed" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
-                    <SelectValue placeholder="U15 Registration" />
+                  <SelectTrigger className="min-h-[40px] px-4 disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] [&>span[data-placeholder]]:text-[#85909e]" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                    <SelectValue placeholder="Registration" />
                   </SelectTrigger>
                   <SelectContent>
                     {registrationOptions.map((registration) => (
@@ -1426,7 +1908,7 @@ export default function AssignAthletesPage() {
                     value={athleteSearchQuery}
                     onChange={(e) => setAthleteSearchQuery(e.target.value)}
                     disabled={!selectedProgram}
-                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] disabled:cursor-not-allowed"
+                    className="w-full h-10 border border-[rgba(167,174,181,0.6)] text-[#13293f] placeholder:text-[rgba(19,41,63,0.4)] rounded placeholder:text-base disabled:bg-[#f8f8f9] disabled:text-[rgba(54,72,92,0.4)] disabled:cursor-not-allowed"
                     style={{ borderRadius: '2px', fontSize: '16px', fontFamily: 'Helvetica, sans-serif' }}
                   />
                 </div>
@@ -1447,34 +1929,34 @@ export default function AssignAthletesPage() {
                     </Button>
                   </SheetTrigger>
 
-                  <SheetContent className="w-[380px] sm:max-w-[380px] bg-card flex flex-col p-0">
-                    <SheetHeader className="flex-shrink-0 px-6 pt-4 pb-3">
-                      <SheetTitle className="text-[#071c31] text-left">Filter Athletes by</SheetTitle>
-                    </SheetHeader>
-                    <div className="border-b border-border -mx-6 mb-4"></div>
+                  <SheetContent className="w-[390px] sm:max-w-[390px] bg-[#fefefe] flex flex-col p-0 shadow-[0px_16px_32px_0px_rgba(0,0,0,0.1),0px_0px_64px_0px_rgba(0,0,0,0.1)] [&>button]:hidden">
+                    {/* Header */}
+                    <div className="flex-shrink-0 bg-[#fefefe] border-b border-[#c4c6c8] flex items-center justify-between gap-3 px-4 py-4 sticky top-0 z-[2]">
+                      <h2 className="text-[#36485c] font-bold text-base leading-[1.2]" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                        Filter Athletes by
+                      </h2>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setAthleteFilterOpen(false)}
+                        className="h-8 w-8 text-[#36485c] hover:bg-[#e0e1e1] p-0"
+                        style={{ borderRadius: '2px' }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
 
-                    <div className="flex-1 overflow-y-auto px-6">
-                      <div className="space-y-6">
-                        {/* Active Filters */}
-                        {athleteFilterCount > 0 && (
-                          <div className="flex items-center justify-between pb-4 border-b border-border">
-                            <div className="flex items-center gap-2">
-                              <ChevronDown className="h-4 w-4 text-foreground" />
-                              <span className="text-foreground text-sm font-medium">
-                                {athleteFilterCount} Active Filter{athleteFilterCount !== 1 ? "s" : ""}
-                              </span>
-                            </div>
-                            <button onClick={clearAthleteFilters} className="text-[var(--u-color-emphasis-background-contrast)] text-sm hover:underline">
-                              Clear
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="flex items-end gap-3">
-                          <div className="flex-1">
-                            <label className="text-sm text-card-foreground font-medium mb-3 block">Minimum Age</label>
+                    {/* Scrollable Content */}
+                    <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6">
+                      <div className="flex flex-col gap-4">
+                        {/* Minimum and Maximum Age - Side by Side */}
+                        <div className="flex gap-2">
+                          <div className="flex-1 flex flex-col gap-2">
+                            <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                              Minimum Age
+                            </label>
                             <Select value={ageRangeMin} onValueChange={setAgeRangeMin}>
-                              <SelectTrigger>
+                              <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
                                 <SelectValue placeholder="Min" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1486,10 +1968,12 @@ export default function AssignAthletesPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className="flex-1">
-                            <label className="text-sm text-card-foreground font-medium mb-3 block">Maximum Age</label>
+                          <div className="flex-1 flex flex-col gap-2">
+                            <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                              Maximum Age
+                            </label>
                             <Select value={ageRangeMax} onValueChange={setAgeRangeMax}>
-                              <SelectTrigger>
+                              <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
                                 <SelectValue placeholder="Max" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1503,11 +1987,33 @@ export default function AssignAthletesPage() {
                           </div>
                         </div>
 
-                        <div>
-                          <label className="text-sm text-card-foreground font-medium mb-3 block">Gender</label>
+                        {/* Status */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                            Status
+                          </label>
+                          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                            <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Assigned">Assigned</SelectItem>
+                              <SelectItem value="Invited">Invited</SelectItem>
+                              <SelectItem value="Accepted">Accepted</SelectItem>
+                              <SelectItem value="Rostered">Rostered</SelectItem>
+                              <SelectItem value="Declined">Declined</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Gender */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                            Gender
+                          </label>
                           <Select value={selectedAthleteFilterGender} onValueChange={setSelectedAthleteFilterGender}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select gender" />
+                            <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                              <SelectValue placeholder="Gender" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Male">Male</SelectItem>
@@ -1516,11 +2022,14 @@ export default function AssignAthletesPage() {
                           </Select>
                         </div>
 
-                        <div>
-                          <label className="text-sm text-card-foreground font-medium mb-3 block">Grade</label>
+                        {/* Grade */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                            Grade
+                          </label>
                           <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select grade" />
+                            <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                              <SelectValue placeholder="Grade" />
                             </SelectTrigger>
                             <SelectContent>
                               {["9th", "10th", "11th", "12th"].map((grade) => (
@@ -1532,11 +2041,14 @@ export default function AssignAthletesPage() {
                           </Select>
                         </div>
 
-                        <div>
-                          <label className="text-sm text-card-foreground font-medium mb-3 block">Graduation Year</label>
+                        {/* Graduation Year */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[#36485c] font-medium text-base leading-none" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                            Graduation Year
+                          </label>
                           <Select value={selectedGraduationYear} onValueChange={setSelectedGraduationYear}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select year" />
+                            <SelectTrigger className="bg-[#fefefe] border border-[#c4c6c8] min-h-[40px] px-4 rounded text-[#607081] text-base focus:outline-none focus:ring-2 focus:ring-[#0273e3] focus:border-transparent" style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif', fontSize: '16px', lineHeight: '1.15' }}>
+                              <SelectValue placeholder="Graduation Year" />
                             </SelectTrigger>
                             <SelectContent>
                               {Array.from({ length: 10 }, (_, i) => {
@@ -1553,25 +2065,24 @@ export default function AssignAthletesPage() {
                       </div>
                     </div>
 
-                    <div className="flex-shrink-0 pt-4 border-t border-border mt-4 px-6 pb-6">
-                      <div className="flex gap-3">
-                        <Button
-                          onClick={() => setAthleteFilterOpen(false)}
-                          variant="outline"
-                          className="flex-1 border-border text-foreground hover:bg-muted"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setFiltersApplied(true)
-                            setAthleteFilterOpen(false)
-                          }}
-                          className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
-                        >
-                          Apply
-                        </Button>
-                      </div>
+                    {/* Footer */}
+                    <div className="flex-shrink-0 bg-[#fefefe] border-t border-[#c4c6c8] flex items-center justify-end gap-3 px-4 py-4 sticky bottom-0 z-[3]">
+                      <Button
+                        onClick={() => {
+                          clearAthleteFilters()
+                        }}
+                        className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] px-4"
+                        style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif' }}
+                      >
+                        Clear All
+                      </Button>
+                      <Button
+                        onClick={() => setAthleteFilterOpen(false)}
+                        className="bg-[#0273e3] hover:bg-[#0260c4] text-white px-4"
+                        style={{ borderRadius: '2px', fontFamily: 'Barlow, sans-serif' }}
+                      >
+                        View {searchedAthletes.length} Athlete{searchedAthletes.length !== 1 ? 's' : ''}
+                      </Button>
                     </div>
                   </SheetContent>
                 </Sheet>
@@ -1582,6 +2093,11 @@ export default function AssignAthletesPage() {
               {searchedAthletes.length > 0 ? (
                 searchedAthletes.map((athlete) => {
                   const isAssigned = assignedAthleteIds.has(athlete.id)
+                  // Check if athlete has "Invited" status on any team
+                  const hasInvitedStatus = isAthleteLockingVariant ? teams.some(team => {
+                    const teamStatuses = athleteStatuses[team.id] || {}
+                    return teamStatuses[athlete.id] === "Invited"
+                  }) : false
                   return (
                   <div
                     key={athlete.id}
@@ -1589,11 +2105,17 @@ export default function AssignAthletesPage() {
                     onDragStart={(e) => handleDragStart(e, athlete.id)}
                     onDragEnd={handleDragEnd}
                     onClick={() => toggleSidebarAthleteSelection(athlete.id)}
-                    className={`flex items-center gap-0 p-0 bg-[#f8f8f9] rounded hover:bg-[#f0f0f0] transition-colors cursor-pointer ${
+                    className={`flex items-center gap-0 p-0 bg-[#f8f8f9] rounded transition-colors relative ${
                       isAssigned ? "border border-[#c4c6c8]" : ""
-                    } ${draggedAthletes.includes(athlete.id) ? "opacity-50" : ""}`}
+                    } ${draggedAthletes.includes(athlete.id) ? "opacity-50" : ""} hover:bg-[#f0f0f0] cursor-pointer`}
                     style={{ height: '48px', borderRadius: '4px' }}
                   >
+                    {/* Badge for multiple athletes being dragged - only show on the primary dragged athlete */}
+                    {draggedAthletes.length > 1 && primaryDraggedAthlete === athlete.id && (
+                      <div className="absolute -top-2 -right-2 z-10 bg-[#0273e3] text-white rounded-full flex items-center justify-center font-bold shadow-lg" style={{ width: '24px', height: '24px', fontSize: '12px' }}>
+                        {draggedAthletes.length}
+                      </div>
+                    )}
                     <div className="bg-[#eff0f0] flex items-center justify-center flex-shrink-0 h-full" style={{ width: '32px', padding: '0 4px', borderTopLeftRadius: '4px', borderBottomLeftRadius: '4px' }}>
                       <GripVertical className="h-6 w-6 text-[#36485c]" />
                     </div>
@@ -1605,9 +2127,16 @@ export default function AssignAthletesPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            setSelectedAthleteForDrawer(athlete)
+                            if (!athleteDrawerOpen) {
+                              drawerHasOpenedRef.current = false
+                              setAthleteDrawerOpen(true)
+                              setSelectedAthleteForDrawer(athlete)
+                            } else {
+                              // Just update content, drawer is already open
+                              setSelectedAthleteForDrawer(athlete)
+                            }
                           }}
-                          className="text-[#36485c] text-sm font-bold text-left truncate"
+                          className="text-[#36485c] text-sm font-bold text-left truncate hover:text-[#607081] cursor-pointer transition-colors"
                           style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}
                         >
                           {athlete.name}
@@ -1615,7 +2144,92 @@ export default function AssignAthletesPage() {
                         <span className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4', letterSpacing: '0px' }}>{athlete.birthdate}</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-center flex-shrink-0 pr-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2 flex-shrink-0 pr-3" onClick={(e) => e.stopPropagation()}>
+                      {isAssigned && (() => {
+                        // Find which teams this athlete is assigned to and their statuses
+                        const teamStatusPairs = teams
+                          .filter(team => {
+                            const slots = teamAssignments[team.id] || {}
+                            return Object.values(slots).includes(athlete.id)
+                          })
+                          .map(team => {
+                            const teamStatuses = athleteStatuses[team.id] || {}
+                            const status = teamStatuses[athlete.id] || "Assigned"
+                            return { team, status }
+                          })
+                        
+                        // Priority order: Declined > Rostered > Accepted > Invited > Assigned
+                        const statusPriority: Record<string, number> = {
+                          "Declined": 1,
+                          "Rostered": 2,
+                          "Accepted": 3,
+                          "Invited": 4,
+                          "Assigned": 5
+                        }
+                        
+                        // Get unique statuses and sort by priority (lowest number = highest priority)
+                        const uniqueStatuses = Array.from(new Set(teamStatusPairs.map(p => p.status)))
+                          .sort((a, b) => {
+                            const aPriority = statusPriority[a || "Assigned"] || 99
+                            const bPriority = statusPriority[b || "Assigned"] || 99
+                            return aPriority - bPriority
+                          })
+                        
+                        const primaryStatus = uniqueStatuses[0] || "Assigned"
+                        const hasMultipleStatuses = uniqueStatuses.length > 1
+                        const secondaryStatus = hasMultipleStatuses ? uniqueStatuses[1] : null
+                        const statusStyle = getStatusBadgeStyle(primaryStatus)
+                        const secondaryStatusStyle = secondaryStatus ? getStatusBadgeStyle(secondaryStatus) : null
+                        
+                        return (
+                          <Tooltip delayDuration={300}>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1">
+                                <span 
+                                  className={`${statusStyle?.bg || 'bg-muted'} ${statusStyle?.text || 'text-foreground'} text-xs px-2 py-0.5 rounded font-bold cursor-pointer flex items-center gap-1`} 
+                                  style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', fontSize: '11px', lineHeight: '1.2' }}
+                                >
+                                  {primaryStatus}
+                                  {isAthleteLockingVariant && primaryStatus === "Invited" && (
+                                    <Lock className="h-3 w-3" />
+                                  )}
+                                </span>
+                                {hasMultipleStatuses && secondaryStatusStyle && (
+                                  <span 
+                                    className={`${secondaryStatusStyle.bg} ${secondaryStatusStyle.text} text-xs px-2 py-0.5 rounded font-bold cursor-pointer`} 
+                                    style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', fontSize: '11px', lineHeight: '1.2' }}
+                                  >
+                                    +{uniqueStatuses.length - 1}
+                                  </span>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-black max-w-xs">
+                              <div className="space-y-1">
+                                {uniqueStatuses.length === 1 ? (
+                                  // Single status - just show team names
+                                  <div className="text-xs">
+                                    {teamStatusPairs.map(p => p.team.name).join(", ")}
+                                  </div>
+                                ) : (
+                                  // Multiple statuses - show status labels
+                                  uniqueStatuses.map((status, idx) => {
+                                    const teamsWithStatus = teamStatusPairs
+                                      .filter(p => p.status === status)
+                                      .map(p => p.team.name)
+                                      .join(", ")
+                                    return (
+                                      <div key={idx} className="text-xs">
+                                        <span className="font-bold">{status}:</span> {teamsWithStatus}
+                                      </div>
+                                    )
+                                  })
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })()}
                       <Checkbox
                         checked={sidebarSelectedAthletes.has(athlete.id)}
                         onCheckedChange={() => toggleSidebarAthleteSelection(athlete.id)}
@@ -1639,33 +2253,174 @@ export default function AssignAthletesPage() {
         </div>
       </div>
 
-      <Sheet open={!!selectedAthleteForDrawer} onOpenChange={(open) => !open && setSelectedAthleteForDrawer(null)}>
-        <SheetContent className="w-[400px] sm:max-w-[400px] bg-card flex flex-col p-0">
-          {selectedAthleteForDrawer && (
-            <>
-              {/* Header */}
-              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-foreground flex items-center justify-center text-primary-foreground text-sm font-semibold">
-                    {selectedAthleteForDrawer.initials}
-                  </div>
-                  <h3 className="text-[#071c31] font-semibold">{selectedAthleteForDrawer.name}</h3>
-                </div>
-              </div>
+      <Sheet 
+        open={athleteDrawerOpen} 
+        onOpenChange={(open) => {
+          // Only close if explicitly closing (not from outside click)
+          if (!open) {
+            drawerHasOpenedRef.current = false
+            setAthleteDrawerOpen(false)
+            setSelectedAthleteForDrawer(null)
+          }
+        }} 
+        modal={false}
+      >
+        <SheetContent 
+          noOverlay 
+          disableAnimation={drawerHasOpenedRef.current} 
+          className="w-[400px] sm:max-w-[400px] bg-card flex flex-col p-0"
+        >
+          {selectedAthleteForDrawer && (() => {
+            const handleCopyEmail = async (email: string) => {
+              try {
+                await navigator.clipboard.writeText(email)
+              } catch (err) {
+                console.error('Failed to copy email:', err)
+              }
+            }
 
-              {/* Footer */}
-              <div className="px-6 py-4 border-t border-border flex gap-3 mt-auto">
-                <Button
-                  onClick={() => setSelectedAthleteForDrawer(null)}
-                  variant="outline"
-                  className="flex-1 border-border text-foreground hover:bg-muted"
-                >
-                  Cancel
-                </Button>
-                <Button className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">Save</Button>
-              </div>
-            </>
-          )}
+            // Find which teams this athlete is assigned to and their statuses
+            const teamStatusPairs = teams
+              .filter(team => {
+                const slots = teamAssignments[team.id] || {}
+                return Object.values(slots).includes(selectedAthleteForDrawer.id)
+              })
+              .map(team => {
+                const teamStatuses = athleteStatuses[team.id] || {}
+                const status = teamStatuses[selectedAthleteForDrawer.id] || "Assigned"
+                return { team, status }
+              })
+            
+            // Get unique statuses
+            const uniqueStatuses = Array.from(new Set(teamStatusPairs.map(p => p.status)))
+            
+            // For drawer, show first status or combine if multiple
+            const athleteStatus = uniqueStatuses.length > 0 ? uniqueStatuses[0] : "Assigned"
+            const statusStyle = getStatusBadgeStyle(athleteStatus)
+            const teamNames = teamStatusPairs.map(p => p.team.name).join(", ")
+
+            return (
+              <>
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-foreground flex items-center justify-center text-primary-foreground text-sm font-semibold">
+                      {selectedAthleteForDrawer.initials}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-[#071c31] font-bold" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '18px' }}>{selectedAthleteForDrawer.name}</h3>
+                      {statusStyle && (
+                        <Tooltip delayDuration={300}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold cursor-pointer`}
+                              style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
+                            >
+                              {useAbbreviations ? getStatusAbbreviation(athleteStatus) : athleteStatus}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{teamNames || "No team assignments"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto px-6 pt-2 pb-4 space-y-6">
+                  {/* Personal Information */}
+    <div>
+                    <h4 className="text-[#071c31] text-base font-bold mb-3" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>Personal Information</h4>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Gender</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>Female</div>
+    </div>
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Date of Birth</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>Jul 7, 2007</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Grade</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>7th Grade</div>
+                        </div>
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Graduation Year</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>2030</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="border-t border-[#c4c6c8]"></div>
+
+                  {/* Family Members */}
+                  <div>
+                    <h4 className="text-[#071c31] text-base font-bold mb-3" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>Family Members</h4>
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Name</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>Jane Doe</div>
+                        </div>
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Email</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>jane.doe@hudl.com</div>
+                            <Tooltip delayDuration={300}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={() => handleCopyEmail('jane.doe@hudl.com')}
+                                  className="p-1 hover:bg-[#e0e1e1] rounded transition-colors"
+                                >
+                                  <Copy className="h-4 w-4 text-[#0273e3]" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Copy</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-t border-[#c4c6c8]"></div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Name</div>
+                          <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>John Doe</div>
+                        </div>
+                        <div>
+                          <div className="text-[#36485c] text-sm font-semibold mb-0.5" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px' }}>Email</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-[#071c31] text-base font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '16px' }}>john.doe@hudl.com</div>
+                            <Tooltip delayDuration={300}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={() => handleCopyEmail('john.doe@hudl.com')}
+                                  className="p-1 hover:bg-[#e0e1e1] rounded transition-colors"
+                                >
+                                  <Copy className="h-4 w-4 text-[#0273e3]" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Copy</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )
+          })()}
         </SheetContent>
       </Sheet>
 
@@ -1675,42 +2430,128 @@ export default function AssignAthletesPage() {
           setInviteModalStep("teams")
           setEmailSubject("")
           setEmailBody("")
+          setAllowAcceptDecline(true)
+          setSelectedAthletesForInvite(new Map())
+          setExpandedTeamsForInvite(new Set())
         }
       }}>
-        <DialogContent className="max-w-[600px] p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
+        <DialogContent className="max-w-[600px] p-0 h-[600px] flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
             <DialogTitle className="text-[#071c31] text-xl font-semibold">Invite Athletes</DialogTitle>
           </DialogHeader>
 
           {inviteModalStep === "teams" ? (
             <>
-              <div className="px-6 pt-4 pb-6">
-                <p className="text-card-foreground text-base mb-4">Choose which teams you would like to send invitations to.</p>
+              <div className="px-6 pt-4 pb-6 flex-1 overflow-y-auto">
+                <p className="text-card-foreground text-base mb-4">Choose which teams and athletes you would like to send invitations to.</p>
 
-                <div className="space-y-1 max-h-[400px] overflow-y-auto">
-                  {teams.map((team) => {
-                    const isSelected = selectedTeamsForInvite.has(team.id)
+                <div className="space-y-3">
+                  {teams
+                    .filter((team) => selectedSeasons.has(team.name))
+                    .map((team) => {
+                    const isExpanded = expandedTeamsForInvite.has(team.id)
+                    const teamSlots = teamAssignments[team.id] || {}
+                    const assignedAthleteIds = Object.values(teamSlots).filter(id => id !== null) as string[]
+                    const teamSelectedAthletes = selectedAthletesForInvite.get(team.id) || new Set<string>()
+                    const allAthletesSelected = assignedAthleteIds.length > 0 && assignedAthleteIds.every(id => teamSelectedAthletes.has(id))
+                    const someAthletesSelected = assignedAthleteIds.some(id => teamSelectedAthletes.has(id))
+                    
                     return (
-                      <button
-                        key={team.id}
-                        onClick={() => toggleTeamForInvite(team.id)}
-                        className="w-full flex items-center justify-between py-2 px-4 hover:bg-muted/50 rounded-lg transition-colors"
-                      >
-                        <span className="text-foreground font-medium text-base">{team.name}</span>
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                            isSelected ? "bg-primary" : "border-2 border-border"
-                          }`}
-                        >
-                          {isSelected && <Check className="h-4 w-4 text-white" />}
+                      <div key={team.id} className="border border-[#c4c6c8] rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between py-2 px-4 hover:bg-[#f8f8f9] transition-colors">
+                          <div className="flex items-center gap-3 flex-1">
+                            <button
+                              onClick={() => toggleTeamExpansionForInvite(team.id)}
+                              className="flex items-center justify-center"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-5 w-5 text-[#36485c]" />
+                              ) : (
+                                <ChevronRight className="h-5 w-5 text-[#36485c]" />
+                              )}
+                            </button>
+                            <span className="text-[#071c31] font-bold text-base" style={{ fontFamily: 'Barlow, sans-serif' }}>{team.name}</span>
+                          </div>
+                          <Checkbox
+                            checked={assignedAthleteIds.length > 0 ? (allAthletesSelected ? true : someAthletesSelected ? "indeterminate" : false) : false}
+                            onCheckedChange={(checked) => {
+                              if (checked && assignedAthleteIds.length > 0) {
+                                // Select all athletes in the team
+                                const newSelected = new Map(selectedAthletesForInvite)
+                                newSelected.set(team.id, new Set(assignedAthleteIds))
+                                setSelectedAthletesForInvite(newSelected)
+                              } else {
+                                // Deselect all athletes in the team
+                                const newSelected = new Map(selectedAthletesForInvite)
+                                newSelected.delete(team.id)
+                                setSelectedAthletesForInvite(newSelected)
+                              }
+                            }}
+                            disabled={assignedAthleteIds.length === 0}
+                            className="h-4 w-4 border-2 border-[#36485c] rounded data-[state=checked]:bg-[#085bb4] data-[state=checked]:border-[#085bb4] data-[state=indeterminate]:bg-[#085bb4] data-[state=indeterminate]:border-[#085bb4] disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                         </div>
-                      </button>
+                        {isExpanded && (
+                          <div className="border-t border-[#c4c6c8] bg-[#fefefe]">
+                            {assignedAthleteIds.length > 0 ? (
+                              <>
+                                {assignedAthleteIds.map((athleteId, index) => {
+                              const athlete = initialAthletes.find(a => a.id === athleteId)
+                              if (!athlete) return null
+                              const isAthleteSelected = teamSelectedAthletes.has(athleteId)
+                              const teamStatuses = athleteStatuses[team.id] || {}
+                              const athleteStatus = teamStatuses[athleteId] || "Assigned"
+                              const isInvited = athleteStatus === "Invited"
+                              return (
+                                <div
+                                  key={athleteId}
+                                  className={`flex items-center justify-between py-3 px-4 hover:bg-[#f8f8f9] transition-colors ${
+                                    index > 0 ? 'border-t border-[#c4c6c8]' : 'pt-4'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <div className="w-5 h-5 flex-shrink-0" />
+                                    <span className="text-[#071c31] text-sm font-bold" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}>{athlete.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {isInvited && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="bg-[#e0e1e1] text-[#071c31] text-xs font-bold px-2 py-0.5 rounded cursor-help" style={{ fontFamily: 'Barlow, sans-serif', borderRadius: '4px', fontSize: '11px', lineHeight: '1.2' }}>
+                                            Invite Sent
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="bg-black text-white border-black">
+                                          <p>Already invited - this will resend</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
+                                    <Checkbox
+                                      checked={isAthleteSelected}
+                                      onCheckedChange={() => toggleAthleteForInvite(team.id, athleteId)}
+                                      className="h-4 w-4 border-2 border-[#36485c] rounded data-[state=checked]:bg-[#085bb4] data-[state=checked]:border-[#085bb4]"
+                                    />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                              </>
+                            ) : (
+                              <div className="py-4 px-4 text-center">
+                                <p className="text-[#607081] text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                                  No athletes assigned to this team
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
+              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 flex-shrink-0">
                 <Button
                   onClick={() => setInviteModalOpen(false)}
                   variant="ghost"
@@ -1725,6 +2566,7 @@ export default function AssignAthletesPage() {
                     setEmailBody("You have been invited to join the team.")
                   }}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
+                  disabled={selectedAthletesForInvite.size === 0}
                 >
                   Next
                   <ArrowRight className="h-4 w-4" />
@@ -1733,8 +2575,18 @@ export default function AssignAthletesPage() {
             </>
           ) : (
             <>
-              <div className="px-6 pt-4 pb-6">
-                <p className="text-card-foreground text-base mb-4">Compose your invitation email.</p>
+              <div className="px-6 pt-4 pb-6 flex-1 overflow-y-auto">
+                {(() => {
+                  const totalSelectedAthletes = Array.from(selectedAthletesForInvite.values()).reduce((sum, athleteSet) => sum + athleteSet.size, 0)
+                  
+                  return (
+                    <div className="mb-4">
+                      <p className="text-card-foreground text-base mb-2">
+                        You are sending invites to <span className="font-bold">{totalSelectedAthletes}</span> athlete{totalSelectedAthletes !== 1 ? 's' : ''}.
+                      </p>
+                    </div>
+                  )
+                })()}
 
                 <div className="space-y-4">
                   <div>
@@ -1756,10 +2608,19 @@ export default function AssignAthletesPage() {
                       className="resize-none"
                     />
                   </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={allowAcceptDecline}
+                      onCheckedChange={setAllowAcceptDecline}
+                    />
+                    <label className="text-sm font-medium text-foreground cursor-pointer" onClick={() => setAllowAcceptDecline(!allowAcceptDecline)}>
+                      Allow Accept/Decline
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
+              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 flex-shrink-0">
                 <Button
                   onClick={() => setInviteModalStep("teams")}
                   variant="ghost"
@@ -1769,36 +2630,99 @@ export default function AssignAthletesPage() {
                 </Button>
                 <Button
                   onClick={() => {
-                    // Get all athletes assigned to the selected teams
-                    const athleteIdsToInvite = new Set<string>()
-                    selectedTeamsForInvite.forEach((teamId) => {
-                      const teamSlots = teamAssignments[teamId] || {}
-                      Object.values(teamSlots).forEach((athleteId) => {
-                        athleteIdsToInvite.add(athleteId)
-                      })
-                    })
-
-                    // Update status to "Invited" for all athletes in selected teams
+                    // Update status to "Invited" only for selected athletes with "Assigned" status
                     setAthleteStatuses((prev) => {
                       const updated = { ...prev }
-                      athleteIdsToInvite.forEach((athleteId) => {
-                        updated[athleteId] = "Invited"
+                      selectedAthletesForInvite.forEach((athleteIds, teamId) => {
+                        const teamStatuses = updated[teamId] || {}
+                        const newTeamStatuses = { ...teamStatuses }
+                        
+                        athleteIds.forEach((athleteId) => {
+                          // Only change status from "Assigned" to "Invited" for this specific team
+                          const currentStatus = teamStatuses[athleteId] || "Assigned"
+                          if (currentStatus === "Assigned") {
+                            newTeamStatuses[athleteId] = "Invited"
+                          }
+                        })
+                        
+                        updated[teamId] = newTeamStatuses
                       })
                       return updated
                     })
 
+                    // Collect all athlete IDs for logging
+                    const athleteIdsToInvite = new Set<string>()
+                    selectedAthletesForInvite.forEach((athleteIds) => {
+                      athleteIds.forEach((athleteId) => {
+                        athleteIdsToInvite.add(athleteId)
+                      })
+                    })
+                    
                     console.log("Sending invitations:", {
-                      teams: Array.from(selectedTeamsForInvite),
+                      teams: Array.from(selectedAthletesForInvite.keys()),
                       athletes: Array.from(athleteIdsToInvite),
                       subject: emailSubject,
                       body: emailBody
                     })
+                    
+                    // Clear new athlete flags for athletes that were sent invitations
+                    setNewAthletes(prev => {
+                      const updated = { ...prev }
+                      selectedAthletesForInvite.forEach((athleteIds, teamId) => {
+                        if (updated[teamId]) {
+                          const updatedSet = new Set(updated[teamId])
+                          athleteIds.forEach(athleteId => {
+                            updatedSet.delete(athleteId)
+                          })
+                          if (updatedSet.size > 0) {
+                            updated[teamId] = updatedSet
+                          } else {
+                            delete updated[teamId]
+                          }
+                        }
+                      })
+                      return updated
+                    })
+                    
                     setInviteModalOpen(false)
                     setInviteModalStep("teams")
                     setEmailSubject("")
                     setEmailBody("")
+                    setAllowAcceptDecline(true)
+                    setSelectedAthletesForInvite(new Map())
+                    setExpandedTeamsForInvite(new Set())
+                    
+                    // Show success toast
+                    toast.custom((t) => (
+                      <div className="bg-white border border-[#c4c6c8] flex gap-4 h-[47px] items-start overflow-clip rounded-[4px] shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1),0px_0px_8px_0px_rgba(0,0,0,0.05)] w-[348px]">
+                        <div className="bg-[#548309] flex h-full items-center p-2 rounded-bl-[4px] rounded-tl-[4px] shrink-0">
+                          <CheckCircle2 className="size-4 text-white" />
+                        </div>
+                        <div className="basis-0 flex flex-col gap-2 grow items-start min-h-px min-w-px px-0 py-4 relative shrink-0">
+                          <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[14px] text-[#36485c]">
+                            Email has been sent
+                          </p>
+                          <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[12px] text-[#607081]">
+                            Invitations sent to {athleteIdsToInvite.size} athlete{athleteIdsToInvite.size !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        <div className="flex gap-0 h-full items-start pl-0 pr-2 py-2 relative shrink-0">
+                          <button
+                            onClick={() => toast.dismiss(t)}
+                            className="flex items-center justify-center size-6 rounded hover:bg-[#f0f0f0] transition-colors"
+                            aria-label="Close"
+                          >
+                            <X className="size-3 text-[#607081] hover:text-[#36485c]" />
+                          </button>
+                        </div>
+                      </div>
+                    ), {
+                      duration: 5000,
+                      position: "bottom-right",
+                    })
                   }}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
+                  disabled={selectedAthletesForInvite.size === 0}
                 >
                   <Send className="h-4 w-4" />
                   Send
@@ -1850,6 +2774,8 @@ export default function AssignAthletesPage() {
       </Dialog>
 
       {/* Complete Teams Preview Drawer */}
+      {/* Review Teams Drawer - Variant A only */}
+      {variant === 'a' && (
       <Sheet open={completeTeamsDrawerOpen} onOpenChange={setCompleteTeamsDrawerOpen}>
         <SheetContent className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
           <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
@@ -1860,8 +2786,15 @@ export default function AssignAthletesPage() {
           
           <div className="flex-1 overflow-y-auto px-6 pt-1 pb-4">
             <div className="mb-4">
-              <p className="text-[#36485c] text-sm leading-relaxed" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+              <p className="text-[#36485c] text-sm leading-relaxed mb-2" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
                 Review your rosters, then confirm your teams. A Hudl account manager will finish setting up your teams. You can close this panel to keep working or make changes later if needed.
+              </p>
+              <p className="text-[#36485c] text-sm leading-relaxed" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+                If you have any questions{' '}
+                <a href="#" className="text-[#0273e3] underline hover:no-underline" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                  contact support
+                </a>
+                .
               </p>
             </div>
             <div className="space-y-2">
@@ -1913,7 +2846,8 @@ export default function AssignAthletesPage() {
                         const athlete = initialAthletes.find(a => a.id === athleteId)
                         if (!athlete) return null
                         
-                        const athleteStatus = athleteStatuses[athleteId] || "Assigned"
+                        const teamStatuses = athleteStatuses[team.id] || {}
+                        const athleteStatus = teamStatuses[athleteId] || "Assigned"
                         const statusStyle = getStatusBadgeStyle(athleteStatus)
                         
                         return (
@@ -1938,7 +2872,7 @@ export default function AssignAthletesPage() {
                                 className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold`}
                                 style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
                               >
-                                {athleteStatus}
+                                {useAbbreviations ? getStatusAbbreviation(athleteStatus) : athleteStatus}
                               </div>
                             )}
                           </div>
@@ -1963,27 +2897,79 @@ export default function AssignAthletesPage() {
           
           <div className="flex-shrink-0 px-6 py-4 border-t border-[#c4c6c8] flex items-center justify-end gap-3">
             <Button
-              variant="outline"
-              onClick={() => setCompleteTeamsDrawerOpen(false)}
-              className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] border-0"
-              style={{ borderRadius: '2px' }}
-            >
-              Cancel
-            </Button>
-            <Button
               onClick={() => {
                 // Handle submit logic here
                 setCompleteTeamsDrawerOpen(false)
+                // Show toast for variant A
+                if (variant === 'a') {
+                  toast.success("Your teams have been finalized", {
+                    style: {
+                      backgroundColor: '#ffffff',
+                      color: '#36485c',
+                      border: '1px solid #c4c6c8'
+                    },
+                    className: 'toast-success-custom'
+                  })
+                }
                 // You can add your submit logic here
               }}
               className="bg-[#0273e3] hover:bg-[#0260c4] text-white"
               style={{ borderRadius: '2px' }}
             >
-              Submit Teams
+              Done
             </Button>
           </div>
         </SheetContent>
       </Sheet>
+      )}
+
+      {/* Review Teams Modal - Variant B only */}
+      {variant === 'b' && (
+      <Dialog open={completeTeamsModalOpen} onOpenChange={setCompleteTeamsModalOpen}>
+        <DialogContent className="max-w-[500px] p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
+            <DialogTitle className="text-[#071c31] font-bold text-lg" style={{ fontFamily: 'Barlow, sans-serif' }}>
+              Review Teams
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="px-6 pt-2 pb-6">
+            <p className="text-[#36485c] text-sm leading-relaxed mb-4" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+              Review your rosters, then confirm your teams. A Hudl account manager will finish setting up your teams. You can close this to keep working or make changes later if needed.
+            </p>
+            <p className="text-[#36485c] text-sm leading-relaxed mb-6" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+              If you have any questions{' '}
+              <a href="#" className="text-[#0273e3] underline hover:no-underline" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                contact support
+              </a>
+              .
+            </p>
+            
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setCompleteTeamsModalOpen(false)}
+                className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] border-0"
+                style={{ borderRadius: '2px' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  // Handle submit logic here
+                  setCompleteTeamsModalOpen(false)
+                  // You can add your submit logic here
+                }}
+                className="bg-[#0273e3] hover:bg-[#0260c4] text-white"
+                style={{ borderRadius: '2px' }}
+              >
+                Submit Teams
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      )}
 
     </div>
   )
