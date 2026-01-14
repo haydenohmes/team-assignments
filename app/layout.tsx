@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { Barlow, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/sonner"
+import { TeamAssignmentsProvider } from "./context/team-assignments-context"
 // Import only the design tokens - skip index.css (has global reset) and uniform-design-system.css (remote import)
 import "@adam-porter/shared-uniform-styles/src/uniform-design-tokens.css"
 import "./globals.css"
@@ -28,9 +29,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans antialiased ${_barlow.className}`}>
-        <Suspense fallback={<div>Loading...</div>}>
-          {children}
-        </Suspense>
+        <TeamAssignmentsProvider>
+          <Suspense fallback={<div>Loading...</div>}>
+            {children}
+          </Suspense>
+        </TeamAssignmentsProvider>
         <Analytics />
         <Toaster />
       </body>

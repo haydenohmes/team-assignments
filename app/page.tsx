@@ -438,7 +438,21 @@ export default function AssignAthletesPage() {
   const availableSeasons = ["2025-2026", "2024-2025", "2023-2024"]
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [athleteFilterOpen, setAthleteFilterOpen] = useState(false)
-  const [selectedSeasons, setSelectedSeasons] = useState<Set<string>>(new Set(["U13-Black"]))
+  const [selectedSeasons, setSelectedSeasons] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('selectedSeasons')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          return new Set(parsed) || new Set(["U13-Black"])
+        } catch (e) {
+          console.error('Failed to parse selectedSeasons from localStorage', e)
+          return new Set(["U13-Black"])
+        }
+      }
+    }
+    return new Set(["U13-Black"])
+  })
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set())
 
   // ADDED separate selection states for different contexts
@@ -449,9 +463,37 @@ export default function AssignAthletesPage() {
   const [athleteDrawerOpen, setAthleteDrawerOpen] = useState(false)
   const drawerHasOpenedRef = useRef(false)
 
-  const [teamAssignments, setTeamAssignments] = useState<TeamAssignment>({})
+  const [teamAssignments, setTeamAssignments] = useState<TeamAssignment>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('teamAssignments')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          return parsed || {}
+        } catch (e) {
+          console.error('Failed to parse teamAssignments from localStorage', e)
+          return {}
+        }
+      }
+    }
+    return {}
+  })
   // Track status per team assignment: { [teamId: string]: { [athleteId: string]: AthleteStatus } }
-  const [athleteStatuses, setAthleteStatuses] = useState<{ [teamId: string]: { [athleteId: string]: AthleteStatus } }>({})
+  const [athleteStatuses, setAthleteStatuses] = useState<{ [teamId: string]: { [athleteId: string]: AthleteStatus } }>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('athleteStatuses')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          return parsed || {}
+        } catch (e) {
+          console.error('Failed to parse athleteStatuses from localStorage', e)
+          return {}
+        }
+      }
+    }
+    return {}
+  })
   // Track new athletes (athletes added after last invitation send): { [teamId: string]: Set<athleteId> }
   // This should only be populated when athletes are added during the current session, not persisted across refreshes
   const [newAthletes, setNewAthletes] = useState<{ [teamId: string]: Set<string> }>({})
@@ -459,6 +501,139 @@ export default function AssignAthletesPage() {
   // Ensure newAthletes is always empty on page load/refresh
   useEffect(() => {
     setNewAthletes({})
+  }, [])
+  
+  // Sync state to localStorage for invite page - but only if we have data
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Only save if we have actual data (not empty objects)
+      if (Object.keys(teamAssignments).length > 0 || Object.keys(athleteStatuses).length > 0) {
+        localStorage.setItem('teamAssignments', JSON.stringify(teamAssignments))
+        localStorage.setItem('athleteStatuses', JSON.stringify(athleteStatuses))
+        localStorage.setItem('selectedSeasons', JSON.stringify(Array.from(selectedSeasons)))
+      }
+    }
+  }, [teamAssignments, athleteStatuses, selectedSeasons])
+  
+  // Load state from localStorage on mount (for when returning from invite page)
+  useEffect(() => {
+    const loadFromStorage = () => {
+      if (typeof window !== 'undefined') {
+        const storedTeamAssignments = localStorage.getItem('teamAssignments')
+        const storedAthleteStatuses = localStorage.getItem('athleteStatuses')
+        const storedSelectedSeasons = localStorage.getItem('selectedSeasons')
+        
+        let hasChanges = false
+        
+        if (storedTeamAssignments) {
+          try {
+            const parsed = JSON.parse(storedTeamAssignments)
+            // Only update if we have actual data and it's different
+            if (Object.keys(parsed).length > 0) {
+              setTeamAssignments(parsed)
+              hasChanges = true
+            }
+          } catch (e) {
+            console.error('Failed to parse teamAssignments from localStorage', e)
+          }
+        }
+        
+        if (storedAthleteStatuses) {
+          try {
+            const parsed = JSON.parse(storedAthleteStatuses)
+            // Only update if we have actual data and it's different
+            if (Object.keys(parsed).length > 0) {
+              setAthleteStatuses(parsed)
+              hasChanges = true
+            }
+          } catch (e) {
+            console.error('Failed to parse athleteStatuses from localStorage', e)
+          }
+        }
+        
+        if (storedSelectedSeasons) {
+          try {
+            const parsed = JSON.parse(storedSelectedSeasons)
+            if (parsed && parsed.length > 0) {
+              setSelectedSeasons(new Set(parsed))
+            }
+          } catch (e) {
+            console.error('Failed to parse selectedSeasons from localStorage', e)
+          }
+        }
+        
+        // Trigger autosave after loading data from localStorage (when returning from invite page)
+        if (hasChanges) {
+          // Small delay to ensure state is updated before autosave
+          setTimeout(() => {
+            triggerAutosave()
+          }, 100)
+        }
+        
+        // Check if we should show the invite toast
+        const showInviteToast = localStorage.getItem('showInviteToast')
+        if (showInviteToast) {
+          try {
+            const toastData = JSON.parse(showInviteToast)
+            localStorage.removeItem('showInviteToast')
+            
+            // Show success toast on main page
+            setTimeout(() => {
+              toast.custom((t) => (
+                <div className="bg-white border border-[#c4c6c8] flex gap-4 h-[47px] items-start overflow-clip rounded-[4px] shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1),0px_0px_8px_0px_rgba(0,0,0,0.05)] w-[348px]">
+                  <div className="bg-[#548309] flex h-full items-center p-2 rounded-bl-[4px] rounded-tl-[4px] shrink-0">
+                    <CheckCircle2 className="size-4 text-white" />
+                  </div>
+                  <div className="basis-0 flex flex-col gap-2 grow items-start min-h-px min-w-px px-0 py-4 relative shrink-0">
+                    <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[14px] text-[#36485c]">
+                      Email has been sent
+                    </p>
+                    <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[12px] text-[#607081]">
+                      Invitations sent to {toastData.athleteCount} athlete{toastData.athleteCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <div className="flex gap-0 h-full items-start pl-0 pr-2 py-2 relative shrink-0">
+                    <button
+                      onClick={() => toast.dismiss(t)}
+                      className="flex items-center justify-center size-6 rounded hover:bg-[#f0f0f0] transition-colors"
+                      aria-label="Close"
+                    >
+                      <X className="size-3 text-[#607081] hover:text-[#36485c]" />
+                    </button>
+                  </div>
+                </div>
+              ), {
+                duration: 5000,
+                position: "bottom-right",
+              })
+            }, 300) // Small delay to ensure page is fully loaded
+          } catch (e) {
+            console.error('Failed to parse showInviteToast from localStorage', e)
+          }
+        }
+      }
+    }
+    
+    // Load on mount
+    loadFromStorage()
+    
+    // Also reload when page becomes visible (when returning from invite page)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadFromStorage()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    // Also reload on focus (when tab becomes active)
+    window.addEventListener('focus', loadFromStorage)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', loadFromStorage)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [draggedAthletes, setDraggedAthletes] = useState<string[]>([])
   const [primaryDraggedAthlete, setPrimaryDraggedAthlete] = useState<string | null>(null) // Track the athlete that initiated the drag
@@ -483,19 +658,9 @@ export default function AssignAthletesPage() {
   const [selectedGrade, setSelectedGrade] = useState<string>("")
   const [selectedGraduationYear, setSelectedGraduationYear] = useState<string>("")
 
-  const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [completeTeamsDrawerOpen, setCompleteTeamsDrawerOpen] = useState(false)
   const [completeTeamsModalOpen, setCompleteTeamsModalOpen] = useState(false)
   const [expandedTeamsInDrawer, setExpandedTeamsInDrawer] = useState<Set<string>>(new Set())
-  const [inviteModalStep, setInviteModalStep] = useState<"teams" | "email">("teams")
-  const [selectedTeamsForInvite, setSelectedTeamsForInvite] = useState<Set<string>>(
-    new Set(teams.slice(0, 5).map((t) => t.id)),
-  )
-  const [expandedTeamsForInvite, setExpandedTeamsForInvite] = useState<Set<string>>(new Set())
-  const [selectedAthletesForInvite, setSelectedAthletesForInvite] = useState<Map<string, Set<string>>>(new Map())
-  const [emailSubject, setEmailSubject] = useState("")
-  const [emailBody, setEmailBody] = useState("")
-  const [allowAcceptDecline, setAllowAcceptDecline] = useState(true)
 
   const [selectedProgram, setSelectedProgram] = useState<string>("")
   const [selectedRegistration, setSelectedRegistration] = useState<string>("")
@@ -850,35 +1015,6 @@ export default function AssignAthletesPage() {
     setSelectedTeamsForInvite(newSelected)
   }
 
-  const toggleTeamExpansionForInvite = (teamId: string) => {
-    const newExpanded = new Set(expandedTeamsForInvite)
-    if (newExpanded.has(teamId)) {
-      newExpanded.delete(teamId)
-    } else {
-      newExpanded.add(teamId)
-    }
-    setExpandedTeamsForInvite(newExpanded)
-  }
-
-  const toggleAthleteForInvite = (teamId: string, athleteId: string) => {
-    const newSelected = new Map(selectedAthletesForInvite)
-    const teamAthletes = newSelected.get(teamId) || new Set<string>()
-    const newTeamAthletes = new Set(teamAthletes)
-    
-    if (newTeamAthletes.has(athleteId)) {
-      newTeamAthletes.delete(athleteId)
-    } else {
-      newTeamAthletes.add(athleteId)
-    }
-    
-    if (newTeamAthletes.size > 0) {
-      newSelected.set(teamId, newTeamAthletes)
-    } else {
-      newSelected.delete(teamId)
-    }
-    
-    setSelectedAthletesForInvite(newSelected)
-  }
 
   const filteredTeams = teams.filter((team) => {
     if (selectedSeasons.size === 0) return false
@@ -1307,7 +1443,17 @@ export default function AssignAthletesPage() {
                   )}
                 </div>
               )}
-              <Button onClick={() => setInviteModalOpen(true)} className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" style={{ borderRadius: '2px' }}>
+              <Button onClick={async () => {
+                // Trigger autosave before navigating
+                await triggerAutosave()
+                // Check if modal variant is requested
+                const isModalVariant = searchParams.get('variant') === 'modal' || searchParams.get('modal') === 'true'
+                if (isModalVariant) {
+                  router.push('/invite?variant=modal')
+                } else {
+                  router.push('/invite')
+                }
+              }} className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" style={{ borderRadius: '2px' }}>
                 Send Invitations
               </Button>
               {variant !== 'default' && !isSetupVariant && (
@@ -2424,315 +2570,6 @@ export default function AssignAthletesPage() {
         </SheetContent>
       </Sheet>
 
-      <Dialog open={inviteModalOpen} onOpenChange={(open) => {
-        setInviteModalOpen(open)
-        if (!open) {
-          setInviteModalStep("teams")
-          setEmailSubject("")
-          setEmailBody("")
-          setAllowAcceptDecline(true)
-          setSelectedAthletesForInvite(new Map())
-          setExpandedTeamsForInvite(new Set())
-        }
-      }}>
-        <DialogContent className="max-w-[600px] p-0 h-[600px] flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-            <DialogTitle className="text-[#071c31] text-xl font-semibold">Invite Athletes</DialogTitle>
-          </DialogHeader>
-
-          {inviteModalStep === "teams" ? (
-            <>
-              <div className="px-6 pt-4 pb-6 flex-1 overflow-y-auto">
-                <p className="text-card-foreground text-base mb-4">Choose which teams and athletes you would like to send invitations to.</p>
-
-                <div className="space-y-3">
-                  {teams
-                    .filter((team) => selectedSeasons.has(team.name))
-                    .map((team) => {
-                    const isExpanded = expandedTeamsForInvite.has(team.id)
-                    const teamSlots = teamAssignments[team.id] || {}
-                    const assignedAthleteIds = Object.values(teamSlots).filter(id => id !== null) as string[]
-                    const teamSelectedAthletes = selectedAthletesForInvite.get(team.id) || new Set<string>()
-                    const allAthletesSelected = assignedAthleteIds.length > 0 && assignedAthleteIds.every(id => teamSelectedAthletes.has(id))
-                    const someAthletesSelected = assignedAthleteIds.some(id => teamSelectedAthletes.has(id))
-                    
-                    return (
-                      <div key={team.id} className="border border-[#c4c6c8] rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between py-2 px-4 hover:bg-[#f8f8f9] transition-colors">
-                          <div className="flex items-center gap-3 flex-1">
-                            <button
-                              onClick={() => toggleTeamExpansionForInvite(team.id)}
-                              className="flex items-center justify-center"
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-5 w-5 text-[#36485c]" />
-                              ) : (
-                                <ChevronRight className="h-5 w-5 text-[#36485c]" />
-                              )}
-                            </button>
-                            <span className="text-[#071c31] font-bold text-base" style={{ fontFamily: 'Barlow, sans-serif' }}>{team.name}</span>
-                          </div>
-                          <Checkbox
-                            checked={assignedAthleteIds.length > 0 ? (allAthletesSelected ? true : someAthletesSelected ? "indeterminate" : false) : false}
-                            onCheckedChange={(checked) => {
-                              if (checked && assignedAthleteIds.length > 0) {
-                                // Select all athletes in the team
-                                const newSelected = new Map(selectedAthletesForInvite)
-                                newSelected.set(team.id, new Set(assignedAthleteIds))
-                                setSelectedAthletesForInvite(newSelected)
-                              } else {
-                                // Deselect all athletes in the team
-                                const newSelected = new Map(selectedAthletesForInvite)
-                                newSelected.delete(team.id)
-                                setSelectedAthletesForInvite(newSelected)
-                              }
-                            }}
-                            disabled={assignedAthleteIds.length === 0}
-                            className="h-4 w-4 border-2 border-[#36485c] rounded data-[state=checked]:bg-[#085bb4] data-[state=checked]:border-[#085bb4] data-[state=indeterminate]:bg-[#085bb4] data-[state=indeterminate]:border-[#085bb4] disabled:opacity-50 disabled:cursor-not-allowed"
-                          />
-                        </div>
-                        {isExpanded && (
-                          <div className="border-t border-[#c4c6c8] bg-[#fefefe]">
-                            {assignedAthleteIds.length > 0 ? (
-                              <>
-                                {assignedAthleteIds.map((athleteId, index) => {
-                              const athlete = initialAthletes.find(a => a.id === athleteId)
-                              if (!athlete) return null
-                              const isAthleteSelected = teamSelectedAthletes.has(athleteId)
-                              const teamStatuses = athleteStatuses[team.id] || {}
-                              const athleteStatus = teamStatuses[athleteId] || "Assigned"
-                              const isInvited = athleteStatus === "Invited"
-                              return (
-                                <div
-                                  key={athleteId}
-                                  className={`flex items-center justify-between py-3 px-4 hover:bg-[#f8f8f9] transition-colors ${
-                                    index > 0 ? 'border-t border-[#c4c6c8]' : 'pt-4'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3 flex-1">
-                                    <div className="w-5 h-5 flex-shrink-0" />
-                                    <span className="text-[#071c31] text-sm font-bold" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4', letterSpacing: '0px' }}>{athlete.name}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    {isInvited && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="bg-[#e0e1e1] text-[#071c31] text-xs font-bold px-2 py-0.5 rounded cursor-help" style={{ fontFamily: 'Barlow, sans-serif', borderRadius: '4px', fontSize: '11px', lineHeight: '1.2' }}>
-                                            Invite Sent
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent className="bg-black text-white border-black">
-                                          <p>Already invited - this will resend</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    )}
-                                    <Checkbox
-                                      checked={isAthleteSelected}
-                                      onCheckedChange={() => toggleAthleteForInvite(team.id, athleteId)}
-                                      className="h-4 w-4 border-2 border-[#36485c] rounded data-[state=checked]:bg-[#085bb4] data-[state=checked]:border-[#085bb4]"
-                                    />
-                                  </div>
-                                </div>
-                              )
-                            })}
-                              </>
-                            ) : (
-                              <div className="py-4 px-4 text-center">
-                                <p className="text-[#607081] text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>
-                                  No athletes assigned to this team
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 flex-shrink-0">
-                <Button
-                  onClick={() => setInviteModalOpen(false)}
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground hover:bg-transparent"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    setInviteModalStep("email")
-                    setEmailSubject("Team Invitation")
-                    setEmailBody("You have been invited to join the team.")
-                  }}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
-                  disabled={selectedAthletesForInvite.size === 0}
-                >
-                  Next
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="px-6 pt-4 pb-6 flex-1 overflow-y-auto">
-                {(() => {
-                  const totalSelectedAthletes = Array.from(selectedAthletesForInvite.values()).reduce((sum, athleteSet) => sum + athleteSet.size, 0)
-                  
-                  return (
-                    <div className="mb-4">
-                      <p className="text-card-foreground text-base mb-2">
-                        You are sending invites to <span className="font-bold">{totalSelectedAthletes}</span> athlete{totalSelectedAthletes !== 1 ? 's' : ''}.
-                      </p>
-                    </div>
-                  )
-                })()}
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">Subject</label>
-                    <Input
-                      type="text"
-                      value={emailSubject}
-                      onChange={(e) => setEmailSubject(e.target.value)}
-                      placeholder="Email subject"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">Message</label>
-                    <Textarea
-                      value={emailBody}
-                      onChange={(e) => setEmailBody(e.target.value)}
-                      placeholder="Email message"
-                      rows={8}
-                      className="resize-none"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={allowAcceptDecline}
-                      onCheckedChange={setAllowAcceptDecline}
-                    />
-                    <label className="text-sm font-medium text-foreground cursor-pointer" onClick={() => setAllowAcceptDecline(!allowAcceptDecline)}>
-                      Allow Accept/Decline
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 flex-shrink-0">
-                <Button
-                  onClick={() => setInviteModalStep("teams")}
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground hover:bg-transparent"
-                >
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    // Update status to "Invited" only for selected athletes with "Assigned" status
-                    setAthleteStatuses((prev) => {
-                      const updated = { ...prev }
-                      selectedAthletesForInvite.forEach((athleteIds, teamId) => {
-                        const teamStatuses = updated[teamId] || {}
-                        const newTeamStatuses = { ...teamStatuses }
-                        
-                        athleteIds.forEach((athleteId) => {
-                          // Only change status from "Assigned" to "Invited" for this specific team
-                          const currentStatus = teamStatuses[athleteId] || "Assigned"
-                          if (currentStatus === "Assigned") {
-                            newTeamStatuses[athleteId] = "Invited"
-                          }
-                        })
-                        
-                        updated[teamId] = newTeamStatuses
-                      })
-                      return updated
-                    })
-
-                    // Collect all athlete IDs for logging
-                    const athleteIdsToInvite = new Set<string>()
-                    selectedAthletesForInvite.forEach((athleteIds) => {
-                      athleteIds.forEach((athleteId) => {
-                        athleteIdsToInvite.add(athleteId)
-                      })
-                    })
-                    
-                    console.log("Sending invitations:", {
-                      teams: Array.from(selectedAthletesForInvite.keys()),
-                      athletes: Array.from(athleteIdsToInvite),
-                      subject: emailSubject,
-                      body: emailBody
-                    })
-                    
-                    // Clear new athlete flags for athletes that were sent invitations
-                    setNewAthletes(prev => {
-                      const updated = { ...prev }
-                      selectedAthletesForInvite.forEach((athleteIds, teamId) => {
-                        if (updated[teamId]) {
-                          const updatedSet = new Set(updated[teamId])
-                          athleteIds.forEach(athleteId => {
-                            updatedSet.delete(athleteId)
-                          })
-                          if (updatedSet.size > 0) {
-                            updated[teamId] = updatedSet
-                          } else {
-                            delete updated[teamId]
-                          }
-                        }
-                      })
-                      return updated
-                    })
-                    
-                    setInviteModalOpen(false)
-                    setInviteModalStep("teams")
-                    setEmailSubject("")
-                    setEmailBody("")
-                    setAllowAcceptDecline(true)
-                    setSelectedAthletesForInvite(new Map())
-                    setExpandedTeamsForInvite(new Set())
-                    
-                    // Show success toast
-                    toast.custom((t) => (
-                      <div className="bg-white border border-[#c4c6c8] flex gap-4 h-[47px] items-start overflow-clip rounded-[4px] shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1),0px_0px_8px_0px_rgba(0,0,0,0.05)] w-[348px]">
-                        <div className="bg-[#548309] flex h-full items-center p-2 rounded-bl-[4px] rounded-tl-[4px] shrink-0">
-                          <CheckCircle2 className="size-4 text-white" />
-                        </div>
-                        <div className="basis-0 flex flex-col gap-2 grow items-start min-h-px min-w-px px-0 py-4 relative shrink-0">
-                          <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[14px] text-[#36485c]">
-                            Email has been sent
-                          </p>
-                          <p className="font-normal leading-[15px] min-w-full not-italic relative shrink-0 text-[12px] text-[#607081]">
-                            Invitations sent to {athleteIdsToInvite.size} athlete{athleteIdsToInvite.size !== 1 ? 's' : ''}
-                          </p>
-                        </div>
-                        <div className="flex gap-0 h-full items-start pl-0 pr-2 py-2 relative shrink-0">
-                          <button
-                            onClick={() => toast.dismiss(t)}
-                            className="flex items-center justify-center size-6 rounded hover:bg-[#f0f0f0] transition-colors"
-                            aria-label="Close"
-                          >
-                            <X className="size-3 text-[#607081] hover:text-[#36485c]" />
-                          </button>
-                        </div>
-                      </div>
-                    ), {
-                      duration: 5000,
-                      position: "bottom-right",
-                    })
-                  }}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
-                  disabled={selectedAthletesForInvite.size === 0}
-                >
-                  <Send className="h-4 w-4" />
-                  Send
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={finalizeModalOpen} onOpenChange={setFinalizeModalOpen}>
         <DialogContent className="max-w-[600px] p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
@@ -2743,12 +2580,20 @@ export default function AssignAthletesPage() {
             <p className="text-card-foreground text-base mb-4">
               Are you sure you want to finalize your rosters for all your teams? This will contact your CSM to discuss your packaging options.
             </p>
-            {assignedAthleteIds.size === 0 && (
-              <div className="mt-4 text-destructive text-sm flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                <span>You cannot finalize teams without any athletes assigned. Please assign at least one athlete to a team before finalizing.</span>
-              </div>
-            )}
+            {(() => {
+              const allAssignedAthleteIds = new Set<string>()
+              Object.values(teamAssignments).forEach((slots) => {
+                Object.values(slots).forEach((athleteId) => {
+                  if (athleteId) allAssignedAthleteIds.add(athleteId)
+                })
+              })
+              return allAssignedAthleteIds.size === 0 && (
+                <div className="mt-4 text-destructive text-sm flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <span>You cannot finalize teams without any athletes assigned. Please assign at least one athlete to a team before finalizing.</span>
+                </div>
+              )
+            })()}
           </div>
 
           <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
@@ -2764,7 +2609,15 @@ export default function AssignAthletesPage() {
                 console.log("Finalizing teams...")
                 setFinalizeModalOpen(false)
               }}
-              disabled={assignedAthleteIds.size === 0}
+              disabled={(() => {
+                const allAssignedAthleteIds = new Set<string>()
+                Object.values(teamAssignments).forEach((slots) => {
+                  Object.values(slots).forEach((athleteId) => {
+                    if (athleteId) allAssignedAthleteIds.add(athleteId)
+                  })
+                })
+                return allAssignedAthleteIds.size === 0
+              })()}
               className="bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Finalize
@@ -2772,6 +2625,131 @@ export default function AssignAthletesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Complete Teams Preview Drawer */}
+      {/* Review Teams Drawer - Variant A only */}
+      {variant === 'a' && (
+      <Sheet open={completeTeamsDrawerOpen} onOpenChange={setCompleteTeamsDrawerOpen}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
+          <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
+            <SheetTitle className="text-[#071c31] font-bold text-lg" style={{ fontFamily: 'Barlow, sans-serif' }}>
+              Review Teams
+            </SheetTitle>
+          </SheetHeader>
+          
+          <div className="flex-1 overflow-y-auto px-6 pt-1 pb-4">
+            <div className="mb-4">
+              <p className="text-[#36485c] text-sm leading-relaxed mb-2" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+                Review your rosters, then confirm your teams. A Hudl account manager will finish setting up your teams. You can close this panel to keep working or make changes later if needed.
+              </p>
+              <p className="text-[#36485c] text-sm leading-relaxed" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.5' }}>
+                If you have any questions{' '}
+                <a href="#" className="text-[#0273e3] underline hover:no-underline" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                  contact support
+                </a>
+                .
+              </p>
+            </div>
+            <div className="space-y-2">
+              {teams.map((team) => {
+                const slots = teamAssignments[team.id] || {}
+                const assignedAthleteIds = Object.values(slots).filter(id => id) as string[]
+                const stats = getTeamStats(team.id)
+                
+                if (assignedAthleteIds.length === 0) {
+                  return null // Skip teams with no assigned athletes
+                }
+
+                const isExpanded = expandedTeamsInDrawer.has(team.id)
+                
+                return (
+                  <div
+                    key={team.id}
+                    className="bg-[#fefefe] border border-[#c4c6c8] rounded overflow-hidden"
+                    style={{ borderRadius: '8px' }}
+                  >
+                    <button
+                      onClick={() => {
+                        const newExpanded = new Set(expandedTeamsInDrawer)
+                        if (isExpanded) {
+                          newExpanded.delete(team.id)
+                        } else {
+                          newExpanded.add(team.id)
+                        }
+                        setExpandedTeamsInDrawer(newExpanded)
+                      }}
+                      className="w-full flex items-center justify-between p-4 hover:bg-[#f8f8f9] transition-colors"
+                      style={{ borderRadius: isExpanded ? '8px 8px 0 0' : '8px' }}
+                    >
+                      <h3 className="text-[#071c31] font-bold text-sm" style={{ fontFamily: 'Barlow, sans-serif' }}>
+                        {team.name}
+                      </h3>
+                      <div className="flex-none">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-[#36485c]" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-[#36485c]" />
+                        )}
+                      </div>
+                    </button>
+                    
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-2">
+                      {assignedAthleteIds.map((athleteId) => {
+                        const athlete = initialAthletes.find(a => a.id === athleteId)
+                        if (!athlete) return null
+                        
+                        const teamStatuses = athleteStatuses[team.id] || {}
+                        const athleteStatus = teamStatuses[athleteId] || "Assigned"
+                        const statusStyle = getStatusBadgeStyle(athleteStatus)
+                        
+                        return (
+                          <div
+                            key={athleteId}
+                            className="flex items-center gap-2 p-2 bg-[#f8f8f9] rounded border border-[#c4c6c8]"
+                            style={{ borderRadius: '4px' }}
+                          >
+                            <div className="w-8 h-8 rounded-full bg-[#38434f] border border-[#fafafa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', letterSpacing: '-0.3px' }}>
+                              {athlete.initials}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[#36485c] text-sm font-bold truncate" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '14px', lineHeight: '1.4' }}>
+                                {athlete.name}
+                              </div>
+                              <div className="text-[#36485c] text-xs font-medium" style={{ fontFamily: 'Barlow, sans-serif', fontSize: '12px', lineHeight: '1.4' }}>
+                                {athlete.birthdate}
+                              </div>
+                            </div>
+                            {statusStyle && (
+                              <div
+                                className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-1 rounded font-bold`}
+                                style={{ borderRadius: '4px', fontFamily: 'Barlow, sans-serif', lineHeight: '1.2' }}
+                              >
+                                {athleteStatus}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t border-[#c4c6c8] flex items-center justify-end gap-3 flex-shrink-0">
+            <Button
+              onClick={() => setCompleteTeamsDrawerOpen(false)}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              Done
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+      )}
 
       {/* Complete Teams Preview Drawer */}
       {/* Review Teams Drawer - Variant A only */}
