@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Switch } from "@/components/ui/switch"
 import { ChevronDown, ChevronRight, ArrowLeft, ArrowRight, Send, Check, X, CheckCircle2 } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -209,7 +208,8 @@ export default function InvitePage() {
   const [selectedAthletesForInvite, setSelectedAthletesForInvite] = useState<Map<string, Set<string>>>(new Map())
   const [emailSubject, setEmailSubject] = useState("")
   const [emailBody, setEmailBody] = useState("")
-  const [allowAcceptDecline, setAllowAcceptDecline] = useState(true)
+  const [hasManuallyEditedSubject, setHasManuallyEditedSubject] = useState(false)
+  const [hasManuallyEditedBody, setHasManuallyEditedBody] = useState(false)
   
   // Load state from localStorage on mount
   const [teamAssignments, setTeamAssignments] = useState<{ [teamId: string]: { [slotIndex: number]: string | null } }>(() => {
@@ -290,8 +290,153 @@ export default function InvitePage() {
           console.error('Failed to parse selectedSeasons from localStorage', e)
         }
       }
+
+      // Load last used email if fields are empty
+      const lastEmail = localStorage.getItem('lastInviteEmail')
+      if (lastEmail && !emailSubject && !emailBody) {
+        try {
+          const parsed = JSON.parse(lastEmail)
+          if (parsed.subject) setEmailSubject(parsed.subject)
+          if (parsed.body) setEmailBody(parsed.body)
+        } catch (e) {
+          console.error('Failed to parse lastInviteEmail from localStorage', e)
+        }
+      }
     }
   }, [])
+
+  // Auto-generate subject when athletes are selected (updates dynamically unless manually edited)
+  useEffect(() => {
+    if (selectedAthletesForInvite.size === 0) {
+      if (!hasManuallyEditedSubject) {
+        setEmailSubject("")
+      }
+      // Reset flag when selection is cleared so it can auto-populate again
+      setHasManuallyEditedSubject(false)
+      return
+    }
+
+    if (!hasManuallyEditedSubject) {
+      const selectedTeamIds = Array.from(selectedAthletesForInvite.keys())
+      const teamNames = selectedTeamIds
+        .map(teamId => {
+          const team = teams.find(t => t.id === teamId)
+          return team?.name
+        })
+        .filter(Boolean)
+      
+      if (teamNames.length > 0) {
+        let newSubject = ""
+        if (teamNames.length === 1) {
+          newSubject = `Team Invitation - ${teamNames[0]}`
+        } else if (teamNames.length <= 3) {
+          newSubject = `Team Invitation - ${teamNames.join(', ')}`
+        } else {
+          newSubject = `Team Invitation - ${teamNames.length} Teams`
+        }
+        setEmailSubject(newSubject)
+      }
+    }
+  }, [selectedAthletesForInvite, hasManuallyEditedSubject])
+
+  // Auto-generate message template when athletes are selected (updates dynamically unless manually edited)
+  useEffect(() => {
+    if (selectedAthletesForInvite.size === 0) {
+      if (!hasManuallyEditedBody) {
+        setEmailBody("")
+      }
+      // Reset flag when selection is cleared so it can auto-populate again
+      setHasManuallyEditedBody(false)
+      return
+    }
+
+    if (!hasManuallyEditedBody) {
+      const totalAthletes = Array.from(selectedAthletesForInvite.values())
+        .reduce((sum, athleteSet) => sum + athleteSet.size, 0)
+      const teamCount = selectedAthletesForInvite.size
+      const season = Array.from(selectedSeasons)[0] || "2025-2026"
+      
+      // Get athlete names for personalization
+      const selectedAthleteIds = new Set<string>()
+      selectedAthletesForInvite.forEach((athleteIds) => {
+        athleteIds.forEach(id => selectedAthleteIds.add(id))
+      })
+      
+      const athleteNames = Array.from(selectedAthleteIds)
+        .map(id => initialAthletes.find(a => a.id === id)?.name)
+        .filter(Boolean) as string[]
+      
+      // Check if any athletes were already invited
+      const hasInvitedAthletes = Array.from(selectedAthletesForInvite.entries()).some(([teamId, athleteIds]) => {
+        const teamStatuses = athleteStatuses[teamId] || {}
+        return Array.from(athleteIds).some(athleteId => teamStatuses[athleteId] === "Invited")
+      })
+
+      let template = ""
+      
+      // Single athlete - personalized
+      if (totalAthletes === 1 && athleteNames.length > 0) {
+        const athleteName = athleteNames[0]
+        const firstName = athleteName.split(' ')[0] // Get first name
+        
+        // Find the team for this athlete
+        let teamName = 'your team'
+        for (const [teamId, athleteIds] of selectedAthletesForInvite.entries()) {
+          if (athleteIds.has(Array.from(selectedAthleteIds)[0])) {
+            const team = teams.find(t => t.id === teamId)
+            if (team) {
+              teamName = team.name
+              break
+            }
+          }
+        }
+        
+        if (hasInvitedAthletes) {
+          template = `Hi ${firstName},
+
+This is a reminder about your team invitation for the ${season} season.
+
+You've been selected to join ${teamName}. We're excited to have you on board!
+
+Please confirm your participation at your earliest convenience.
+
+Best regards`
+        } else {
+          template = `Hi ${firstName},
+
+You've been invited to join ${teamName} for the ${season} season.
+
+We're excited to have you on board and look forward to seeing you at practice!
+
+Best regards`
+        }
+      } 
+      // Multiple athletes - general greeting
+      else {
+        if (hasInvitedAthletes) {
+          template = `Hi there,
+
+This is a reminder about your team invitation for the ${season} season.
+
+You've been selected to join ${teamCount > 1 ? 'your teams' : 'your team'}. We're excited to have you on board!
+
+Please confirm your participation at your earliest convenience.
+
+Best regards`
+        } else {
+          template = `Hi there,
+
+You've been invited to join ${teamCount > 1 ? 'your teams' : 'your team'} for the ${season} season.
+
+We're excited to have you on board and look forward to seeing you at practice!
+
+Best regards`
+        }
+      }
+
+      setEmailBody(template)
+    }
+  }, [selectedAthletesForInvite, selectedSeasons, athleteStatuses, hasManuallyEditedBody])
   
   const toggleTeamExpansionForInvite = (teamId: string) => {
     const newExpanded = new Set(expandedTeamsForInvite)
@@ -370,6 +515,12 @@ export default function InvitePage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('showInviteToast', JSON.stringify({
         athleteCount: athleteIdsToInvite.size
+      }))
+      
+      // Save last used email for future use
+      localStorage.setItem('lastInviteEmail', JSON.stringify({
+        subject: emailSubject,
+        body: emailBody
       }))
     }
     
@@ -571,7 +722,10 @@ export default function InvitePage() {
                 <Input
                   type="text"
                   value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
+                  onChange={(e) => {
+                    setEmailSubject(e.target.value)
+                    setHasManuallyEditedSubject(true)
+                  }}
                   placeholder="Email subject"
                   className="h-12 text-base"
                 />
@@ -580,20 +734,14 @@ export default function InvitePage() {
                 <label className="block text-sm font-medium text-[#071c31] mb-2">Message</label>
                 <Textarea
                   value={emailBody}
-                  onChange={(e) => setEmailBody(e.target.value)}
+                  onChange={(e) => {
+                    setEmailBody(e.target.value)
+                    setHasManuallyEditedBody(true)
+                  }}
                   placeholder="Email message"
                   rows={12}
                   className="resize-none text-base"
                 />
-              </div>
-              <div className="flex items-center gap-3 pt-2">
-                <Switch
-                  checked={allowAcceptDecline}
-                  onCheckedChange={setAllowAcceptDecline}
-                />
-                <label className="text-sm font-medium text-[#071c31] cursor-pointer" onClick={() => setAllowAcceptDecline(!allowAcceptDecline)}>
-                  Allow Accept/Decline
-                </label>
               </div>
             </div>
           </div>
