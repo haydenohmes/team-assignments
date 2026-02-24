@@ -1,0 +1,189 @@
+/* App.css - Styles for the Uniform Web App */
+
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+  background-color: #f5f5f5;
+}
+
+/* Button styles */
+button {
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  opacity: 0.8;
+}
+
+/* Link styles */
+a {
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+th, td {
+  text-align: left;
+  padding: 12px 16px;
+}
+
+th {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+td {
+  border-bottom: 1px dashed #e0e0e0;
+}
+
+th {
+  background-color: #f8f9fa;
+  font-weight: bold;
+  color: #666;
+}
+
+tr:hover {
+  background-color: #f9f9f9;
+}
+
+/* Card styles */
+.card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Form styles */
+input, select, textarea {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+/* Status indicators */
+.status-paid {
+  color: #28a745;
+  font-weight: bold;
+}
+
+.status-current {
+  color: #666;
+  font-weight: bold;
+}
+
+.status-pending {
+  color: #ffc107;
+  font-weight: bold;
+}
+
+/* Loading states */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #666;
+}
+
+.loading::before {
+  content: "⏳";
+  margin-right: 8px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Error states */
+.error {
+  background-color: #ffebee;
+  color: #c62828;
+  padding: 16px;
+  border-radius: 4px;
+  border: 1px solid #ffcdd2;
+}
+
+/* Success states */
+.success {
+  background-color: #e8f5e8;
+  color: #2e7d32;
+  padding: 16px;
+  border-radius: 4px;
+  border: 1px solid #c8e6c9;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .App nav {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .App nav > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  table {
+    font-size: 14px;
+  }
+  
+  th, td {
+    padding: 8px 12px;
+  }
+  th {
+    border-bottom: 1px solid var(--u-color-line-default, #d1d3d4);
+  }
+  td {
+    border-bottom: 1px dashed var(--u-color-line-subtle, #c4c6c8);
+  }
+}
+
+/* Component grid */
+.component-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.component-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background-color: white;
+  transition: box-shadow 0.2s ease;
+}
+
+.component-card:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+
+
+

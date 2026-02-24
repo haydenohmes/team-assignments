@@ -1,0 +1,83 @@
+/* Uniform Design System CSS Custom Properties */
+/* Complete set of design tokens for the application */
+
+:root {
+  /* ===== FONTS ===== */
+  --u-font-body: 'Barlow', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --u-font-heading: 'Barlow', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+
+  /* Font Weights */
+  --u-font-weight-regular: 400;
+  --u-font-weight-medium: 500;
+  --u-font-weight-semibold: 600;
+  --u-font-weight-bold: 700;
+
+  /* Font Sizes */
+  --u-font-size-micro: 12px;
+  --u-font-size-extra-small: 12px;
+  --u-font-size-x-small: 12px;
+  --u-font-size-small: 14px;
+  --u-font-size-default: 16px;
+  --u-font-size-medium: 16px;
+  --u-font-size-large: 20px;
+  --u-font-size-xlarge: 20px;
+  --u-font-size-xx-large: 24px;
+  --u-font-size-title-xxlarge: 32px;
+
+  /* ===== COLORS ===== */
+  /* Alert/Error */
+  --u-color-alert-background: #fef0ee;
+  --u-color-alert-foreground: #bb1700;
+
+  /* Background */
+  --u-color-background-container: #fefefe;
+  --u-color-background-default: #e8eaec;
+  --u-color-background-popover: #ffffff;
+  --u-color-background-subtle: #f5f6f7;
+
+  /* Base (Neutral) */
+  --u-color-base-background: #e0e1e1;
+  --u-color-base-background-contrast: #607081;
+  --u-color-base-foreground: #36485c;
+  --u-color-base-foreground-contrast: #071c31;
+  --u-color-base-foreground-subtle: #6c757d;
+
+  /* Emphasis (Primary) */
+  --u-color-emphasis-background-contrast: #0273e3;
+  --u-color-emphasis-foreground-reversed: #fefefe;
+
+  /* Error */
+  --u-color-error-background: #ffebee;
+
+  /* Line/Border */
+  --u-color-line-default: #d1d3d4;
+  --u-color-line-subtle: #c4c6c8;
+
+  /* Success */
+  --u-color-success-foreground: #2e7d32;
+
+  /* ===== SPACING ===== */
+  --u-space-zero: 0;
+  --u-space-eighth: 2px;
+  --u-space-quarter: 4px;
+  --u-space-half: 8px;
+  --u-space-three-quarter: 12px;
+  --u-space-one: 16px;
+  --u-space-one-and-half: 24px;
+  --u-space-one-half: 24px;
+  --u-space-two: 32px;
+  --u-space-three: 48px;
+  --u-space-four: 64px;
+
+  /* ===== BORDERS ===== */
+  --u-border-radius-small: 2px;
+  --u-border-radius-medium: 4px;
+  --u-border-radius-large: 8px;
+
+  /* ===== LETTER SPACING ===== */
+  --u-letter-spacing-default: 0px;
+}
+
+
+
+
