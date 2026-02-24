@@ -1171,7 +1171,7 @@ const RegistrationOverview = ({
               <div className="registration-overview-widgets waitlist-widget-wrapper" style={{ marginBottom: 0 }}>
                 <DataWidget
                   label="Waitlist Registrants"
-                  value={waitlistAthletesData.length.toString()}
+                  value={waitlistOpen ? waitlistAthletesData.length.toString() : '0'}
                   size="medium"
                   avatar={null}
                   subheader={null}
@@ -1180,7 +1180,7 @@ const RegistrationOverview = ({
                 />
                 <DataWidget
                   label="Waitlist Value"
-                  value={`$${(waitlistAthletesData.length * 385).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  value={waitlistOpen ? `$${(waitlistAthletesData.length * 385).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
                   size="medium"
                   avatar={null}
                   subheader={null}
