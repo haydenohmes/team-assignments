@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -417,7 +417,7 @@ const getStatusAbbreviation = (status: AthleteStatus): string => {
   }
 }
 
-export default function AssignAthletesPage() {
+function AssignAthletesPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const variant = searchParams.get('variant') || 'default'
@@ -2950,5 +2950,13 @@ export default function AssignAthletesPage() {
       )}
 
     </div>
+  )
+}
+
+export default function AssignAthletesPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <AssignAthletesPageContent />
+    </Suspense>
   )
 }

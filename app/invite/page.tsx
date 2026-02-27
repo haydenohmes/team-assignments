@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -200,7 +200,7 @@ const initialAthletesData: Omit<Athlete, 'registrations'>[] = [
 
 const initialAthletes = assignRegistrations(initialAthletesData)
 
-export default function InvitePage() {
+function InvitePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isModalVariant = searchParams.get('variant') === 'modal' || searchParams.get('modal') === 'true'
@@ -637,6 +637,14 @@ export default function InvitePage() {
     <div className="min-h-screen bg-[#f8f8f9] flex flex-col">
       {content}
     </div>
+  )
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f8f8f9] flex items-center justify-center">Loading...</div>}>
+      <InvitePageContent />
+    </Suspense>
   )
 }
 
