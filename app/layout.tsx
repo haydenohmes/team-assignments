@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Suspense } from "react"
 import { Barlow, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/sonner"
@@ -30,9 +29,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans antialiased ${_barlow.className}`}>
         <TeamAssignmentsProvider>
-          <Suspense fallback={<div>Loading...</div>}>
-            {children}
-          </Suspense>
+          {children}
         </TeamAssignmentsProvider>
         <Analytics />
         <Toaster />

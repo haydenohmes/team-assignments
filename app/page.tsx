@@ -662,40 +662,6 @@ export default function AssignAthletesPage() {
   const [completeTeamsModalOpen, setCompleteTeamsModalOpen] = useState(false)
   const [expandedTeamsInDrawer, setExpandedTeamsInDrawer] = useState<Set<string>>(new Set())
 
-  // Handler for drawer close with toast notification
-  const handleCompleteTeamsDrawerChange = (open: boolean) => {
-    if (!open && completeTeamsDrawerOpen) {
-      // Drawer is closing, show toast
-      toast.custom((t) => (
-        <div className="bg-white border border-[#c4c6c8] flex gap-0 h-[56px] items-center overflow-clip rounded-[4px] shadow-[0px_4px_8px_0px_rgba(0,0,0,0.1),0px_0px_8px_0px_rgba(0,0,0,0.05)] w-[348px]">
-          <div className="bg-[#548309] flex h-full items-center justify-center p-2 rounded-bl-[4px] rounded-tl-[4px] shrink-0 w-[56px]">
-            <div className="bg-white rounded-full w-5 h-5 flex items-center justify-center">
-              <Info className="size-3 text-[#548309]" />
-            </div>
-          </div>
-          <div className="flex-1 flex items-center px-4 py-0 min-h-px min-w-px relative shrink-0">
-            <p className="font-normal leading-[15px] not-italic relative text-[12px] text-[#36485c]">
-              Email has been sent
-            </p>
-          </div>
-          <div className="flex gap-0 h-full items-center pl-0 pr-2 py-2 relative shrink-0">
-            <button
-              onClick={() => toast.dismiss(t)}
-              className="flex items-center justify-center size-6 rounded hover:bg-[#f0f0f0] transition-colors"
-              aria-label="Close"
-            >
-              <X className="size-3 text-[#607081] hover:text-[#36485c]" />
-            </button>
-          </div>
-        </div>
-      ), {
-        duration: 5000,
-        position: "bottom-right",
-      })
-    }
-    setCompleteTeamsDrawerOpen(open)
-  }
-
   const [selectedProgram, setSelectedProgram] = useState<string>("")
   const [selectedRegistration, setSelectedRegistration] = useState<string>("")
   const [hasSaved, setHasSaved] = useState(false)
@@ -1487,7 +1453,7 @@ export default function AssignAthletesPage() {
                 } else {
                   router.push('/invite')
                 }
-              }} className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] h-9 px-4" style={{ borderRadius: '2px' }}>
+              }} className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" style={{ borderRadius: '2px' }}>
                 Send Invitations
               </Button>
               {variant !== 'default' && !isSetupVariant && (
@@ -1499,7 +1465,7 @@ export default function AssignAthletesPage() {
                       setCompleteTeamsDrawerOpen(true)
                     }
                   }}
-                  className="bg-[#0273e3] hover:bg-[#0260c4] text-white gap-2 h-9 px-4" 
+                  className="bg-[#e0e1e1] hover:bg-[#c4c6c8] text-[#36485c] h-9 px-4" 
                   style={{ borderRadius: '2px' }}
                 >
                   Review Teams
@@ -2607,7 +2573,7 @@ export default function AssignAthletesPage() {
       <Dialog open={finalizeModalOpen} onOpenChange={setFinalizeModalOpen}>
         <DialogContent className="max-w-[600px] p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
-            <DialogTitle className="text-[#071c31] text-xl font-semibold">Review Teams</DialogTitle>
+            <DialogTitle className="text-[#071c31] text-xl font-semibold">Finalize Teams</DialogTitle>
           </DialogHeader>
 
           <div className="px-6 pt-4 pb-6">
@@ -2663,8 +2629,8 @@ export default function AssignAthletesPage() {
       {/* Complete Teams Preview Drawer */}
       {/* Review Teams Drawer - Variant A only */}
       {variant === 'a' && (
-      <Sheet open={completeTeamsDrawerOpen} onOpenChange={handleCompleteTeamsDrawerChange}>
-        <SheetContent noOverlay className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
+      <Sheet open={completeTeamsDrawerOpen} onOpenChange={setCompleteTeamsDrawerOpen}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
           <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
             <SheetTitle className="text-[#071c31] font-bold text-lg" style={{ fontFamily: 'Barlow, sans-serif' }}>
               Review Teams
@@ -2775,10 +2741,10 @@ export default function AssignAthletesPage() {
 
           <div className="px-6 py-4 border-t border-[#c4c6c8] flex items-center justify-end gap-3 flex-shrink-0">
             <Button
-              onClick={() => handleCompleteTeamsDrawerChange(false)}
+              onClick={() => setCompleteTeamsDrawerOpen(false)}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              Confirm Teams
+              Done
             </Button>
           </div>
         </SheetContent>
@@ -2788,8 +2754,8 @@ export default function AssignAthletesPage() {
       {/* Complete Teams Preview Drawer */}
       {/* Review Teams Drawer - Variant A only */}
       {variant === 'a' && (
-      <Sheet open={completeTeamsDrawerOpen} onOpenChange={handleCompleteTeamsDrawerChange}>
-        <SheetContent noOverlay className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
+      <Sheet open={completeTeamsDrawerOpen} onOpenChange={setCompleteTeamsDrawerOpen}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] bg-[#fefefe] flex flex-col p-0 overflow-y-auto">
           <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-[#c4c6c8]">
             <SheetTitle className="text-[#071c31] font-bold text-lg" style={{ fontFamily: 'Barlow, sans-serif' }}>
               Review Teams
@@ -2911,13 +2877,24 @@ export default function AssignAthletesPage() {
             <Button
               onClick={() => {
                 // Handle submit logic here
-                handleCompleteTeamsDrawerChange(false)
+                setCompleteTeamsDrawerOpen(false)
+                // Show toast for variant A
+                if (variant === 'a') {
+                  toast.success("Your teams have been finalized", {
+                    style: {
+                      backgroundColor: '#ffffff',
+                      color: '#36485c',
+                      border: '1px solid #c4c6c8'
+                    },
+                    className: 'toast-success-custom'
+                  })
+                }
                 // You can add your submit logic here
               }}
               className="bg-[#0273e3] hover:bg-[#0260c4] text-white"
               style={{ borderRadius: '2px' }}
             >
-              Confirm Teams
+              Done
             </Button>
           </div>
         </SheetContent>
